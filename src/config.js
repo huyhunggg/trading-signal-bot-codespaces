@@ -18,7 +18,10 @@ export function loadConfig(env = process.env) {
     return value;
   };
   const cfg = {
-    exchange: env.EXCHANGE || 'binance',
+    exchange: env.EXCHANGE || 'okx',
+    sourceMode: env.DATA_SOURCE_MODE || 'auto',
+    restIntervalMs: number('REST_MIN_INTERVAL_MS', 350, 200, 5000),
+    pollIntervalMs: number('POLL_INTERVAL_SECONDS', 5, 5, 60) * 1000,
     symbols: [...new Set(list('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT'))],
     timeframes: [...new Set(list('TIMEFRAMES', '5m,15m'))], htf: env.HTF || '1h',
     pinbarEnabled: (env.PINBAR_ENABLED || 'true') === 'true',
@@ -30,6 +33,7 @@ export function loadConfig(env = process.env) {
     telegramToken: env.TELEGRAM_BOT_TOKEN || '', telegramChatId: env.TELEGRAM_CHAT_ID || '',
     validation: {
       autoCalibrate: (env.AUTO_CALIBRATE || 'true') === 'true',
+      heapMb: number('VALIDATION_HEAP_MB', 256, 128, 2048),
       target: decimal('MIN_WIN_RATE_PERCENT', 80, 80, 99) / 100,
       minSamples: number('VALIDATION_MIN_SAMPLES', 100, 30, 10000),
       days: number('VALIDATION_DAYS', 180, 7, 730),
@@ -41,7 +45,9 @@ export function loadConfig(env = process.env) {
     },
     rules: RULES,
   };
-  if (!['binance', 'bybit'].includes(cfg.exchange)) throw new Error('EXCHANGE must be binance or bybit');
+  if (!['binance', 'bybit', 'okx'].includes(cfg.exchange)) throw new Error('EXCHANGE must be binance, bybit or okx');
+  if (!['auto', 'fixed'].includes(cfg.sourceMode)) throw new Error('DATA_SOURCE_MODE must be auto or fixed');
+  cfg.sourceOrder = cfg.sourceMode === 'fixed' ? [cfg.exchange] : [...new Set([cfg.exchange, 'okx', 'bybit', 'binance'])];
   if (!cfg.symbols.length || cfg.symbols.length > 20 || cfg.symbols.some(s => !/^[A-Z0-9]{2,20}USDT$/.test(s))) throw new Error('SYMBOLS: 1..20 USDT perpetual symbols required');
   if (!['1h', '4h'].includes(cfg.htf) || !cfg.timeframes.length || cfg.timeframes.some(tf => !['5m', '15m'].includes(tf))) throw new Error('TIMEFRAMES: 5m,15m; HTF: 1h or 4h');
   if (env.PINBAR_ENABLED && !['true', 'false'].includes(env.PINBAR_ENABLED)) throw new Error('PINBAR_ENABLED must be true or false');

@@ -17,7 +17,7 @@ const baseSignal = () => ({ exchange: 'binance', symbol: 'BTCUSDT', timeframe: '
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'confluence-validation-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const cfg = { ...loadConfig({}), dataDir: dir }, gate = new ValidationGate(cfg);
+  const cfg = { ...loadConfig({ EXCHANGE: 'binance' }), dataDir: dir }, gate = new ValidationGate(cfg);
   return { cfg, gate };
 }
 function report(cfg, changes = {}) {
@@ -60,6 +60,17 @@ test('groups cannot borrow rates across coins, direction, timeframe, branch or i
     const v = gate.assess({ ...baseSignal(), ...change }, NOW); assert.equal(v.eligible, false); assert.equal(v.winRate, null);
   }
   assert.equal(gate.assess({ ...baseSignal(), layer: 'IMPULSE' }, NOW).status, 'UNSUPPORTED_LAYER');
+});
+test('changing data venues loads a separate report and never reuses another exchange win rate', t => {
+  const { cfg, gate } = setup(t); write(gate, report(cfg)); const binanceFile = gate.file;
+  assert.equal(gate.assess(baseSignal(), NOW).eligible, true);
+  cfg.exchange = 'okx'; const okxSignal = { ...baseSignal(), exchange: 'okx' };
+  assert.equal(gate.assess(okxSignal, NOW).eligible, false);
+  const r = report(cfg); r.groups[0].key = groupKey(okxSignal); write(gate, r);
+  assert.equal(gate.assess(okxSignal, NOW).eligible, true);
+  assert.equal(gate.assess(baseSignal(), NOW).status, 'INCOMPATIBLE');
+  assert.equal(fs.existsSync(binanceFile), true); assert.notEqual(gate.file, binanceFile);
+  cfg.exchange = 'binance'; assert.equal(gate.assess(baseSignal(), NOW).eligible, true);
 });
 test('future, stale, synthetic and incompatible reports fail closed', t => {
   const { cfg, gate } = setup(t);
@@ -152,6 +163,6 @@ test('historical download paginates without overlaps for Binance and reversed By
   }
 });
 test('missing historical pages fail instead of reporting an inflated or partial win rate', async () => {
-  const market = new Market(loadConfig({}), async () => []);
+  const market = new Market(loadConfig({ EXCHANGE: 'binance' }), async () => []);
   await assert.rejects(() => market.candleRange('BTCUSDT', '5m', 0, INTERVALS['5m']), /lịch sử bị thiếu/);
 });

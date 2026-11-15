@@ -1,8 +1,20 @@
 # Confluence — bot cảnh báo crypto LONG/SHORT
 
-Bản 0.2.0 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Có bảng theo dõi giá và cơ hội LONG/SHORT, thống kê thắng lịch sử theo nhóm và Telegram. Dữ liệu công khai Binance hoặc Bybit, không cần API key tài khoản sàn. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
+Bản 0.3.0 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Có bảng theo dõi giá và cơ hội LONG/SHORT, thống kê thắng lịch sử theo nhóm và Telegram. Dữ liệu công khai OKX, Bybit hoặc Binance, không cần API key tài khoản sàn. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
 
-**Trạng thái bàn giao:** phần tính tín hiệu, lưu trạng thái, gửi tin có thử lại và HTTP dashboard đã được kiểm thử tự động. Môi trường xây dựng bị Binance trả HTTP 451 và Bybit trả HTTP 403 do giới hạn truy cập/khu vực. Chưa xác minh dữ liệu WebSocket live, Telegram thực tế hoặc hiệu quả đầu tư. Chưa triển khai một tiến trình chạy 24/7. Giao diện đã kiểm tra HTTP và cú pháp JavaScript; chưa kiểm tra hiển thị trong trình duyệt ở môi trường này.
+**Trạng thái kiểm chứng:** đã kiểm tra sáu bảng giá BTC/ETH/SOL bằng dữ liệu OKX thật và xác nhận giá tiếp tục cập nhật qua REST. Môi trường kiểm tra chưa kết nối được WebSocket OKX nên chế độ REST dự phòng được dùng và ghi rõ trên giao diện. Chưa xác minh gửi Telegram thật hoặc hiệu quả đầu tư. Việc host luôn bật và lưu dữ liệu bền vững phụ thuộc dịch vụ triển khai; gói có tự ngủ không đáp ứng theo dõi 24/7.
+
+## Khi triển khai trên Render
+
+Repo có Dockerfile cho Web Service; dùng `HOST=0.0.0.0` và để Render cấp `PORT`. Endpoint kiểm tra tiến trình là `/api/status`, có trường `version` để xác nhận bản đang chạy. Trạng thái HTTP 200 chỉ cho biết giao diện hoạt động, không bảo đảm nguồn thị trường đã kết nối.
+
+Mặc định `EXCHANGE=okx`, `DATA_SOURCE_MODE=auto`. Bot ưu tiên nguồn được chọn, sau đó mới thử nguồn độc lập khác có thể truy cập; mỗi phiên dùng một sàn duy nhất. Nếu muốn chỉ dùng Binance hoặc Bybit, đặt `EXCHANGE` tương ứng và `DATA_SOURCE_MODE=fixed`. Không dùng proxy hoặc địa chỉ Binance khác để vượt hạn chế API.
+
+HTTP **418** là trạng thái IP bị sàn tạm khóa. Bot đọc `Retry-After` và thời điểm hết khóa trong phản hồi nếu có, lưu thời hạn chờ, không tiếp tục gọi nguồn đó trong thời gian bị khóa. Với 403/451, nguồn được tạm dừng thay vì thử liên tục. Khi tất cả nguồn chưa khả dụng, giao diện hiển thị trạng thái chờ và thời điểm thử lại; không điền giá giả.
+
+Lịch sử được tải trước dù WebSocket lỗi. Nếu WebSocket không hoạt động, bot chuyển sang **REST thật với chu kỳ mục tiêu 5 giây**, còn phụ thuộc độ trễ mạng và số luồng; giao diện ghi rõ chế độ REST và thời gian cập nhật. Đây không phải độ trễ WebSocket 250 ms. REST được xếp hàng, mặc định cách nhau ít nhất 350 ms/yêu cầu trong mỗi tiến trình.
+
+Tác vụ kiểm chứng chạy riêng với heap tối đa 256 MB theo mặc định. Lịch sử được cache riêng từng sàn/cặp/khung ở `data/history`, lần sau chỉ tải dữ liệu mới và làm mới hai nến cuối. Báo cáo cũng tách theo sàn, không lấy tỷ lệ Binance để gán cho tín hiệu OKX. Nên giữ ba cặp mặc định trên máy ít RAM. Cần ổ đĩa bền vững nếu muốn giữ cache, thống kê và thời hạn chờ qua những lần thay container.
 
 Bot chỉ cảnh báo, chưa tự đặt, chốt hoặc dời SL. Các mức entry/SL/TP là **giá tham khảo**, không phải xác nhận khớp lệnh. Có bộ mô phỏng lịch sử để kiểm chứng và lọc thông báo; chưa có số liệu thực chứng minh chiến lược đạt 80%+ trong môi trường xây dựng bị giới hạn API. Không gán điểm hội tụ thành xác suất thắng và không bảo đảm lợi nhuận tương lai.
 
@@ -25,7 +37,7 @@ Khi kết nối live đã hoạt động, mặc định bot tự chạy kiểm c
 npm run calibrate
 ```
 
-Mặc định tải 180 ngày lịch sử và thêm nến khởi tạo EMA. Quy tắc giữ cố định; thống kê chỉ lấy **30% giai đoạn cuối**, không tự dò tham số trên tập đó để ép đạt 80%. Báo cáo ở `data/calibration.json`, log ở `data/calibration.log`; file `data/validation-trades-*.jsonl` ghi từng kết quả mô phỏng và được dẫn bằng SHA256 trong báo cáo. Bot tự nạp báo cáo mới, không cần khởi động lại để đọc thống kê. Nếu sàn từ chối API hoặc lịch sử thiếu, báo cáo mới không được tạo; không thay bằng dữ liệu mô phỏng.
+Mặc định tải 180 ngày lịch sử và thêm nến khởi tạo EMA. Quy tắc giữ cố định; thống kê chỉ lấy **30% giai đoạn cuối**, không tự dò tham số trên tập đó để ép đạt 80%. Báo cáo ở `data/calibration-<sàn>.json`, log ở `data/calibration.log`; file `data/validation-trades-*.jsonl` ghi từng kết quả mô phỏng và được dẫn bằng SHA256 trong báo cáo. Bot tự nạp báo cáo mới, không cần khởi động lại để đọc thống kê. Báo cáo `calibration.json` của bản cũ chỉ được dùng nếu đúng sàn và cấu hình. Nếu sàn từ chối API hoặc lịch sử thiếu, báo cáo mới không được tạo; không thay bằng dữ liệu mô phỏng.
 
 ### Quy ước tính thắng
 
@@ -111,16 +123,16 @@ Lệnh kiểm tra chỉ đọc thông tin bot/chat, chưa gửi tin nhắn. Bot 
 
 ## 3. Bật dữ liệu thật
 
-Trong `.env`, giữ `EXCHANGE=binance` hoặc đặt `EXCHANGE=bybit`. Mỗi lần chạy dùng một sàn nhất quán; không trộn giá Binance với mức tham khảo Bybit.
+Trong `.env`, mặc định `EXCHANGE=okx` và `DATA_SOURCE_MODE=auto`; có thể chọn `binance` hoặc `bybit`. Mỗi phiên dùng một sàn nhất quán; mức TP/SL và thống kê luôn thuộc nguồn được ghi trên giao diện. `DATA_SOURCE_MODE=fixed` tắt việc chọn nguồn dự phòng.
 
 ```powershell
 npm run check
 npm start
 ```
 
-`check` xác minh REST và dữ liệu nến; chưa xác minh WebSocket. Sau `npm start`, dashboard chuyển sang **Đang nhận dữ liệu** khi đã kết nối WebSocket và đồng bộ lịch sử. Việc kiểm chứng lịch sử diễn ra riêng; có thể chưa nhóm nào đạt bộ lọc 80% dù luồng giá hoạt động. Telegram báo “đã cấu hình” chỉ có nghĩa là đã điền hai trường; chạy `telegram:check` để kiểm tra chúng, và trạng thái “gửi gần nhất” chỉ xuất hiện sau lần gửi thành công.
+`check` xác minh nguồn REST và dữ liệu nến; chưa xác minh WebSocket. Sau `npm start`, dashboard ghi rõ đang nhận WebSocket hay đang cập nhật REST. Việc kiểm chứng lịch sử diễn ra riêng; có thể chưa nhóm nào đạt bộ lọc 80% dù luồng giá hoạt động. Telegram báo “đã cấu hình” chỉ có nghĩa là đã điền hai trường; chạy `telegram:check` để kiểm tra chúng, và trạng thái “gửi gần nhất” chỉ xuất hiện sau lần gửi thành công.
 
-Nếu API trả 403/451, bot hiển thị trạng thái bị từ chối và dừng tự thử kết nối dữ liệu. Kiểm tra quyền truy cập/điều khoản của sàn đối với nơi chạy; khi đã có quyền truy cập hợp lệ, khởi động lại bot. Không dùng dữ liệu demo làm dữ liệu thật. Khi mất kết nối thông thường, bot tự kết nối lại và tải lịch sử bù. Giá cũ vẫn được ghi rõ trên dashboard.
+Nếu một nguồn bị chặn, chế độ auto chỉ thử nguồn độc lập khác; nguồn bị chặn vẫn tuân thủ thời hạn chờ. Chế độ fixed chờ đúng nguồn đã chọn. Không dùng dữ liệu demo làm dữ liệu thật. Khi mất kết nối thông thường, bot tự kết nối lại và tải lịch sử bù. Giá cũ vẫn được ghi rõ trên dashboard.
 
 Bot chỉ theo dõi khi tiến trình đang chạy. Để hoạt động 24/7, cần máy luôn bật hoặc máy chủ được phép truy cập sàn, có Node.js và một trình quản lý tiến trình tự khởi động lại bot. Dashboard mặc định chỉ nghe `127.0.0.1`; khi dùng máy chủ từ xa, truy cập qua đường hầm SSH riêng. Không mở cổng dashboard công khai: bản này chưa có đăng nhập.
 
@@ -174,20 +186,23 @@ Nhánh pin-bar mặc định được bật để triển khai hai cơ chế mà
 
 ## 5. Độ trễ, dữ liệu và lưu trạng thái
 
-- Bot dùng WebSocket. Theo tài liệu sàn tại thời điểm xây dựng, Binance kline cập nhật khoảng 250 ms nếu có dữ liệu; Bybit kline có tần suất 1–60 giây. Đây không phải cam kết thời gian nhận Telegram. Còn độ trễ mạng, sự kiện đóng nến, hàng đợi và Telegram.
+- Bot ưu tiên WebSocket và có REST dự phòng. Theo tài liệu sàn, Binance kline cập nhật khoảng 250 ms nếu có dữ liệu, OKX nhanh nhất khoảng 1 giây, Bybit 1–60 giây. REST có chu kỳ mục tiêu 5 giây. Đây không phải cam kết thời gian nhận Telegram; còn độ trễ mạng, sự kiện đóng nến, hàng đợi và Telegram.
 - Tín hiệu lớp 1 đợi cờ đóng nến. H1/H4 cũng phải đã đóng tại thời điểm tín hiệu; ở ranh giới giờ, bot đợi sự kiện H1 thay vì dùng H1 cũ. Dữ liệu có thể được sàn điều chỉnh sau đó; không có bảo đảm “không repaint 100%”.
 - Khi khởi động/khôi phục, tải 650 nến cho mỗi luồng và không phát lại lịch sử như tín hiệu mới. Nếu lịch sử thiếu hoặc đứt đoạn, tạm dừng và đồng bộ lại. Cặp mới niêm yết chưa đủ lịch sử sẽ chưa được hỗ trợ.
 - Mặc định dữ liệu một luồng im lặng quá 90 giây sẽ gây kết nối lại. Cảnh báo đóng nến trễ quá 120 giây bị bỏ qua. Tin Telegram chưa gửi hết hạn sau 120 giây từ đóng nến đối với lớp 1, từ phát hiện đối với lớp 2.
 - `data/state.json`: ID đã báo, mốc chống spam, 100 tín hiệu gần nhất và hàng đợi Telegram. `data/signals.jsonl`: nhật ký lâu dài, mỗi dòng một tín hiệu.
 - Lưu trạng thái qua file tạm và đổi tên. Chỉ chạy **một tiến trình cho mỗi thư mục dữ liệu**; cần sao lưu và theo dõi dung lượng nhật ký khi vận hành lâu dài.
 - Telegram thử lại khi lỗi và tuân thủ `retry_after`. Trường hợp Telegram đã nhận tin nhưng tiến trình dừng trước khi lưu xác nhận có thể tạo một tin lặp sau khởi động lại; ID trong tin giúp nhận biết. Chưa có bảo đảm giao tin đúng một lần hoặc nhận ngay tức thì.
-- Dùng proxy/CA đã cấu hình trong môi trường nếu có, giữ xác minh TLS. Không tự chuyển nguồn hay lách giới hạn khu vực.
+- Giữ xác minh TLS và mạng/proxy hợp lệ có sẵn của môi trường. Auto chỉ chọn API công khai của sàn độc lập khác; không đổi IP hoặc tên miền để lách lệnh khóa của một sàn.
 
 ## 6. Cấu hình chính
 
 | Biến trong `.env` | Mặc định | Ý nghĩa |
 | --- | --- | --- |
-| `EXCHANGE` | `binance` | `binance` hoặc `bybit`, dữ liệu USDT perpetual |
+| `EXCHANGE` | `okx` | Nguồn ưu tiên: `okx`, `bybit` hoặc `binance`, USDT perpetual |
+| `DATA_SOURCE_MODE` | `auto` | `auto` chọn nguồn độc lập khả dụng; `fixed` chỉ một sàn |
+| `REST_MIN_INTERVAL_MS` | `350` | Khoảng cách tối thiểu giữa yêu cầu REST mỗi tiến trình |
+| `POLL_INTERVAL_SECONDS` | `5` | Chu kỳ mục tiêu khi dùng REST thay WebSocket |
 | `SYMBOLS` | `BTCUSDT,ETHUSDT,SOLUSDT` | Cặp phân cách bằng dấu phẩy, tối đa 20 |
 | `TIMEFRAMES` | `5m,15m` | 5m, 15m hoặc cả hai |
 | `HTF` | `1h` | 1h hoặc 4h |
@@ -200,6 +215,7 @@ Nhánh pin-bar mặc định được bật để triển khai hai cơ chế mà
 | `DATA_DIR` | `./data` | Trạng thái và nhật ký thật |
 | `MIN_WIN_RATE_PERCENT` | `80` | Ngưỡng cận dưới Wilson, cho phép 80–99 |
 | `AUTO_CALIBRATE` | `true` | Tự kiểm chứng khi có kết nối live |
+| `VALIDATION_HEAP_MB` | `256` | Heap tối đa của tiến trình kiểm chứng |
 | `VALIDATION_MIN_SAMPLES` | `100` | Số lệnh tối thiểu mỗi nhóm |
 | `VALIDATION_DAYS` | `180` | Số ngày lịch sử tải để kiểm chứng |
 | `VALIDATION_MAX_AGE_DAYS` | `7` | Tuổi tối đa của báo cáo |
@@ -218,7 +234,11 @@ npm test
 
 Kiểm thử bao gồm chỉ báo, LONG/SHORT, chọn HTF theo thời điểm, dữ liệu thiếu/cũ, chống báo trùng, mô phỏng phí và gap/TP/SL, kiểm tra không dùng dữ liệu tương lai, cỡ mẫu và khoảng Wilson, phân trang dữ liệu hai sàn, hàng đợi gửi tin, tác vụ tự kiểm chứng và HTTP dashboard của tiến trình demo. Không dùng tiền thật hoặc gửi Telegram trong kiểm thử.
 
-- `src/market.js`: REST, WebSocket và chuẩn hóa dữ liệu hai sàn.
+- `src/market.js`: REST, WebSocket và chuẩn hóa dữ liệu ba sàn.
+- `src/provider-health.js`: hàng đợi REST và thời hạn chờ API.
+- `src/source-manager.js`: chọn một nguồn dữ liệu nhất quán.
+- `src/live-session.js`: bootstrap và chuyển WebSocket sang REST khi cần.
+- `src/history-cache.js`: cache và tải bổ sung lịch sử.
 - `src/indicators.js`: các chỉ báo có tính nhân quả theo thời gian.
 - `src/strategy.js`: điều kiện và các mức giá tham khảo.
 - `src/engine.js`: đồng bộ khung lớn, kiểm tra dữ liệu, điều phối tín hiệu.
@@ -234,7 +254,7 @@ Repository có sẵn workflow `.github/workflows/ci.yml` để chạy kiểm th�
 
 Bộ kiểm thử chạy trong GitHub Actions; Docker image được build trong cùng workflow. Kiểm tra HTTP của tiến trình demo xác nhận sáu bảng giá và trạng thái tỷ lệ chưa biết. Chưa kiểm tra hiển thị trình duyệt tự động trong môi trường xây dựng này.
 
-Đây là cách triển khai mới từ bản mô tả bạn cung cấp. Bản 0.2.0 có công cụ backtest với chi phí giả định và chia giai đoạn theo thời gian; chưa có kết quả thị trường thực ở môi trường xây dựng bị giới hạn API và chưa paper trading live. Trước khi tự giao dịch tiền thật ở phiên bản sau cần kiểm chứng thêm các giả định khớp lệnh, chi phí và hiệu quả ngoài mẫu.
+Đây là cách triển khai mới từ bản mô tả bạn cung cấp. Bản 0.3.0 có công cụ backtest với chi phí giả định và chia giai đoạn theo thời gian. Việc lấy được giá live không chứng minh tỷ lệ thắng 80%; chỉ thống kê từ báo cáo đúng nguồn, đủ mẫu và đạt điều kiện mới được hiển thị là đạt bộ lọc. Chưa có paper trading theo lệnh khớp thật hoặc bảo đảm lợi nhuận.
 
 ## Tài liệu API đã đối chiếu
 
@@ -242,4 +262,5 @@ Bộ kiểm thử chạy trong GitHub Actions; Docker image được build trong
 - Binance REST klines: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
 - Bybit WebSocket kline: https://bybit-exchange.github.io/docs/v5/websocket/public/kline
 - Bybit REST kline: https://bybit-exchange.github.io/docs/v5/market/kline
+- OKX REST/WS, candle history, volume và rate limits: https://www.okx.com/docs-v5/en/
 - Telegram Bot API: https://core.telegram.org/bots/api

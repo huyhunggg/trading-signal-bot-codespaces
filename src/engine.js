@@ -27,30 +27,31 @@ export class SignalEngine {
     return c?.endTime === expected ? c : null;
   }
   ingest({ symbol, timeframe: tf, candle: c, eventTime }) {
-    if (!this.cfg.symbols.includes(symbol) || ![...this.cfg.timeframes, this.cfg.htf].includes(tf)) return;
+    if (!this.cfg.symbols.includes(symbol) || ![...this.cfg.timeframes, this.cfg.htf].includes(tf)) return false;
     const now = this.now(), key = this.key(symbol, tf), bars = this.histories.get(key);
     if (!bars?.length) throw new Error('Stream received before history bootstrap');
     if (!Number.isFinite(eventTime) || eventTime > now + 10_000) throw new Error('Timestamp dữ liệu không hợp lệ; cần kiểm tra đồng hồ.');
-    if (now - eventTime > this.cfg.streamStaleMs) return;
-    if (eventTime < (this.lastEvent.get(key) || 0)) return;
+    if (now - eventTime > this.cfg.streamStaleMs) return false;
+    if (eventTime < (this.lastEvent.get(key) || 0)) return false;
     this.lastEvent.set(key, eventTime);
     const last = bars.at(-1), ms = INTERVALS[tf];
-    if (c.openTime < last.openTime || c.openTime === last.openTime && !c.closed) return;
+    if (c.openTime < last.openTime || c.openTime === last.openTime && !c.closed) return false;
     // A closed candle is immutable; a repeated final event cannot change history.
     if (c.openTime === last.openTime) {
       if (['open', 'high', 'low', 'close', 'volume'].some(k => c[k] !== last[k])) throw new Error('Sàn sửa dữ liệu nến đã đóng; đồng bộ lại trước khi phát tín hiệu.');
-      return;
+      return false;
     }
     if (c.openTime !== last.openTime + ms) throw new Error(`${symbol} ${tf}: phát hiện khoảng trống dữ liệu.`);
     if (c.closed) {
       if (c.endTime > now + 1000) throw new Error('Candle marked closed before its end');
       bars.push(c); if (bars.length > this.cfg.historyBars) bars.shift(); this.cache.delete(key);
-      if (tf === this.cfg.htf) { this.flushPending(symbol); return; }
+      if (tf === this.cfg.htf) { this.flushPending(symbol); return true; }
       this.pending.set(`${key}:${c.openTime}`, { symbol, tf, candle: c });
       this.flushPending(symbol);
     } else if (this.cfg.timeframes.includes(tf)) {
       this.intrabar(symbol, tf, c, eventTime);
     }
+    return true;
   }
   flushPending(symbol) {
     for (const [key, item] of this.pending) {
@@ -91,7 +92,7 @@ export class SignalEngine {
   }
   updateRow(symbol, tf, c, htf, results, livePrice) {
     this.rows.set(this.key(symbol, tf), {
-      symbol, timeframe: tf, price: livePrice ?? c.close, updatedAt: this.now(), lastClosedAt: c.endTime,
+      exchange: this.cfg.exchange, symbol, timeframe: tf, price: livePrice ?? c.close, priceKind: livePrice === undefined ? 'CLOSED_CANDLE' : 'LAST_PRICE', updatedAt: this.now(), lastClosedAt: c.endTime,
       htf: htfTrend(htf), htfEndTime: htf.endTime, rsi: c.rsi, atr: c.atr, vwap: c.vwap,
       adx: c.adx, rvol: c.rvol, ema21: c.ema21, ema50: c.ema50, ema200: c.ema200,
       // These checks describe the last closed candle. Live price is displayed separately.

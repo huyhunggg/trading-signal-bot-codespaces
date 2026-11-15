@@ -130,11 +130,17 @@ export function buildReport(cfg, dataset, onProgress = () => {}, onTrade = () =>
     for (const key of Object.keys(totals)) totals[key] += result[key];
     onProgress({ symbol, timeframe, ...totals, groups: groups.length });
   }
+  const digest = createHash('sha256').update(JSON.stringify({ version: 'ohlcv-v1', exchange: dataset.exchange, start: dataset.startTime, end: dataset.endTime }));
+  // Hash incrementally: avoid a second full copy of months of OHLCV in RAM.
+  for (const key of Object.keys(dataset.series).sort()) {
+    digest.update('\n' + key + '\n');
+    for (const c of dataset.series[key]) digest.update([c.openTime, c.endTime, c.open, c.high, c.low, c.close, c.volume, c.closed ? 1 : 0].join(',') + '\n');
+  }
   return { schemaVersion: 1, kind: 'historical-validation', strategyHash: strategyHash(cfg), exchange: cfg.exchange,
     generatedAt: Math.max(Date.now(), dataset.endTime), dataThrough: dataset.endTime,
     evaluation: { startTime: evaluationStart, endTime: dataset.endTime, fraction: 0.3, purgedHorizon: true },
     source: { kind: dataset.source?.kind || 'unverified', provider: dataset.exchange,
-      sha256: createHash('sha256').update(JSON.stringify(dataset)).digest('hex') },
+      sha256: digest.digest('hex'), hashAlgorithm: 'sha256-ohlcv-v1' },
     policy: simulationPolicy(cfg), groups, totals,
     limitation: 'Tần suất thắng lịch sử của nhóm tương tự, không phải xác suất riêng của lệnh mới. Giữ nguyên quy tắc; không tự tối ưu trên tập kiểm chứng. OHLC không xác định chính xác thứ tự trong nến; dùng đường đi bất lợi. Xung lực chưa được kiểm chứng.' };
 }

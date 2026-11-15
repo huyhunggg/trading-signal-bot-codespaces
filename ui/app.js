@@ -7,14 +7,15 @@ const labelled = (label, value, className = 'num') => { const n = el('div'); n.a
 function render(s) {
   last = s;
   const live = s.status.phase === 'STREAMING', demo = s.demo;
-  $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : ({ STREAMING: 'Đang nhận dữ liệu', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
+  $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : s.status.phase === 'STREAMING' && s.status.transport === 'REST_POLL' ? 'Đang cập nhật giá qua REST' : ({ STREAMING: 'Đang nhận dữ liệu WebSocket', SELECTING: 'Đang chọn nguồn giá', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', PAUSED: 'Đang chờ nguồn giá mở lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
   $('dot').className = 'dot ' + (demo ? 'demo' : live ? 'online' : '');
   $('clock').textContent = date(s.serverNow) + ' UTC+7';
-  $('source').textContent = `${s.exchange.toUpperCase()} · USDT perpetual · HTF ${s.htf}`;
+  $('source').textContent = `${s.exchange.toUpperCase()} · USDT perpetual · HTF ${s.htf}${s.status.transport === 'REST_POLL' ? ` · chu kỳ ${Math.round((s.status.pollIntervalMs || 5000) / 1000)}s` : ''}`;
   $('telegram').textContent = demo ? 'Telegram tắt trong chế độ mô phỏng' : !s.telegram.configured ? 'Telegram: chưa cấu hình' : s.telegram.lastError ? 'Telegram: lỗi gửi tin, đang thử lại' : s.telegram.lastSuccessAt ? `Telegram: gửi gần nhất ${date(s.telegram.lastSuccessAt)}` : 'Telegram: đã cấu hình · chờ tín hiệu đầu tiên';
-  const notice = $('notice'); notice.hidden = !demo && live;
+  const notice = $('notice'); notice.hidden = !demo && live && !s.status.message;
   notice.className = 'notice' + (demo ? ' demo' : '');
-  notice.textContent = demo ? 'DỮ LIỆU TỔNG HỢP — Các giá và cảnh báo dưới đây chỉ minh họa phần mềm, không phải tín hiệu thị trường thật.' : s.status.error || 'Chưa sẵn sàng phát tín hiệu. Bot đang kết nối và đồng bộ dữ liệu.';
+  notice.textContent = demo ? 'DỮ LIỆU TỔNG HỢP — Các giá và cảnh báo dưới đây chỉ minh họa phần mềm, không phải tín hiệu thị trường thật.' : (s.status.error || s.status.message || 'Chưa sẵn sàng phát tín hiệu. Bot đang kết nối và đồng bộ dữ liệu.') + (s.status.retryAt ? ' Thử lại sau ' + date(s.status.retryAt) + '.' : '');
+  $('source-health').textContent = (s.sources || []).filter(p => p.state).map(p => `${p.exchange.toUpperCase()}: ${p.state === 'AVAILABLE' ? (p.exchange === s.exchange ? 'đang dùng' : 'khả dụng') : `tạm dừng${p.httpStatus ? ' (HTTP ' + p.httpStatus + ')' : ''} đến ${date(p.retryAt)}`}`).join(' · ');
   $('coverage').textContent = `${s.symbols.length} cặp / ${s.timeframes.length} khung`;
   $('htf').textContent = `${s.timeframes.join(' + ')} · xác nhận ${s.htf} đã đóng`;
   $('closedCount').textContent = s.signals.filter(x => x.validation?.eligible === true).length;
@@ -37,7 +38,7 @@ function render(s) {
     const card = el('article', undefined, 'market'), top = el('div', undefined, 'market-top'), title = el('h3', symbol.replace('USDT', ''));
     title.append(el('small', `USDT · ${tf}`));
     top.append(title, el('span', stale ? 'DỮ LIỆU CHƯA SẴN SÀNG' : r?.htf ? `${s.htf} ${r.htf}` : 'ĐỢI HTF', `pill ${!stale && r?.htf === 'LONG' ? 'long' : !stale && r?.htf === 'SHORT' ? 'short' : 'neutral'}`));
-    card.append(top, el('div', fmt(r?.price, 4), 'price'), el('div', r ? demo ? 'Giá mô phỏng' : stale ? 'Giá cuối đã nhận · không dùng làm giá live' : `Cập nhật ${Math.max(0, Math.floor((s.serverNow - r.updatedAt) / 1000))} giây trước` : 'Chưa có dữ liệu', 'fresh'));
+    card.append(top, el('div', fmt(r?.price, 4), 'price'), el('div', r ? demo ? 'Giá mô phỏng' : stale ? 'Giá cuối đã nhận · không dùng làm giá live' : r.priceKind === 'CLOSED_CANDLE' ? 'Giá đóng nến mới nhất · đang chờ cập nhật giá' : `Cập nhật ${Math.max(0, Math.floor((s.serverNow - r.updatedAt) / 1000))} giây trước` : 'Chưa có dữ liệu', 'fresh'));
     const stats = el('div', undefined, 'stats');
     for (const [label, value] of [['RSI(2)', fmt(r?.rsi)], ['ATR(14)', fmt(r?.atr, 4)], ['RVOL(20)', r?.rvol ? `${fmt(r.rvol)}×` : '—']]) { const n = el('div'); n.append(el('span', label), el('strong', value)); stats.append(n); }
     card.append(stats);
@@ -59,7 +60,7 @@ function renderSignals() {
     (!$('eligibility').value || ($('eligibility').value === 'passed' ? x.validation?.eligible === true : x.validation?.eligible !== true))).sort((a, b) => b.observedAt - a.observedAt);
   const nodes = signals.map(s => {
     const n = el('article', undefined, 'signal'), first = el('div'), title = el('strong', `${s.side} · ${s.symbol} · ${s.timeframe}`, s.side.toLowerCase());
-    first.append(title, el('div', `${s.layer === 'CLOSED' ? 'ĐÃ ĐÓNG NẾN' : 'NẾN ĐANG CHẠY'} · ${s.branch}`, s.layer === 'CLOSED' ? 'meta' : 'meta early'));
+    first.append(title, el('div', `${s.exchange.toUpperCase()} · ${s.layer === 'CLOSED' ? 'ĐÃ ĐÓNG NẾN' : 'NẾN ĐANG CHẠY'} · ${s.branch}`, s.layer === 'CLOSED' ? 'meta' : 'meta early'));
     const v = s.validation;
     first.append(el('div', last.demo ? 'MÔ PHỎNG' : v?.eligible ? 'ĐÃ QUA BỘ LỌC LỊCH SỬ' : s.watch ? 'QUAN SÁT · CHƯA GỬI' : 'LƯU TRỮ · CHƯA KIỂM CHỨNG', `meta ${v?.eligible ? 'long' : 'early'}`));
     const detail = v?.winRate !== null && v?.winRate !== undefined

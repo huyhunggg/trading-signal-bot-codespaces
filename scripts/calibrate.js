@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadConfig, INTERVALS } from '../src/config.js';
-import { Market } from '../src/market.js';
+import { SourceManager } from '../src/source-manager.js';
 import { buildReport } from '../src/backtest.js';
 import { wilson } from '../src/validation.js';
+import { cachedHistory } from '../src/history-cache.js';
 
 const args = process.argv.slice(2);
 const cfg = loadConfig({ ...process.env, TELEGRAM_BOT_TOKEN: '', TELEGRAM_CHAT_ID: '' });
@@ -13,9 +14,10 @@ try {
   let dataset;
   if (args[0] === '--input') {
     dataset = JSON.parse(fs.readFileSync(args[1], 'utf8'));
+    if (cfg.sourceMode === 'auto' && ['binance', 'bybit', 'okx'].includes(dataset.exchange)) cfg.exchange = dataset.exchange;
     if (dataset.source?.kind !== 'exchange-ohlcv') throw new Error('Chỉ dùng dữ liệu OHLCV có nguồn sàn; không dùng dữ liệu demo để xác nhận tỷ lệ thắng.');
   } else {
-    const market = new Market(cfg), serverTime = await market.serverTime();
+    const { market, serverTime } = await new SourceManager(cfg).choose(exchange => console.log(`Kiểm tra nguồn lịch sử ${exchange}...`));
     const endTime = Math.floor(serverTime / Math.max(...cfg.timeframes.map(tf => INTERVALS[tf]))) * Math.max(...cfg.timeframes.map(tf => INTERVALS[tf]));
     const startTime = endTime - cfg.validation.days * 86_400_000;
     const warmupStart = startTime - (cfg.historyBars + 1) * INTERVALS[cfg.htf];
@@ -23,7 +25,7 @@ try {
       source: { kind: 'exchange-ohlcv', downloadedAt: serverTime }, series: {} };
     for (const symbol of cfg.symbols) for (const tf of [...new Set([...cfg.timeframes, cfg.htf])]) {
       console.log(`Đang tải ${symbol} ${tf}: ${cfg.validation.days} ngày và lịch sử khởi tạo...`);
-      dataset.series[`${symbol}:${tf}`] = await market.candleRange(symbol, tf, warmupStart, endTime);
+      dataset.series[`${symbol}:${tf}`] = await cachedHistory(market, cfg, symbol, tf, warmupStart, endTime);
       console.log(`Đã nhận ${dataset.series[`${symbol}:${tf}`].length} nến đóng.`);
     }
   }
@@ -35,7 +37,7 @@ try {
   report.audit = { file: `validation-trades-${auditHash.slice(0, 16)}.jsonl`, sha256: auditHash, count: trades.length };
   fs.writeFileSync(path.join(cfg.dataDir, report.audit.file), audit, { mode: 0o600 });
   // Write only after ALL series pass. Failure leaves the prior report intact.
-  const file = path.join(cfg.dataDir, 'calibration.json');
+  const file = path.join(cfg.dataDir, `calibration-${cfg.exchange}.json`);
   fs.writeFileSync(file + '.tmp', JSON.stringify(report, null, 2), { mode: 0o600 }); fs.renameSync(file + '.tmp', file);
   fs.rmSync(path.join(cfg.dataDir, 'calibration-retry-after.json'), { force: true });
   const passes = report.groups.filter(g => g.samples >= cfg.validation.minSamples && wilson(g.wins, g.samples)?.lower >= cfg.validation.target && g.sumNetR > 0);

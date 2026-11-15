@@ -1,6 +1,6 @@
 {
   "name": "confluence-signal-bot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Local crypto futures alert bot: closed-candle confluence and intrabar impulse alerts",

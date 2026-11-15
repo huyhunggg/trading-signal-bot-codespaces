@@ -26,7 +26,7 @@ export function wilson(wins, samples) {
 }
 
 export const REASONS = {
-  MISSING_PROFILE: 'Chưa có báo cáo kiểm chứng lịch sử. Chạy npm run calibrate.',
+  MISSING_PROFILE: 'Chưa có thống kê lịch sử được kiểm chứng cho nguồn giá này.',
   INVALID_PROFILE: 'Báo cáo không hợp lệ; chưa dùng để đánh giá tín hiệu.',
   SYNTHETIC: 'Dữ liệu mô phỏng không được dùng để xác nhận tỷ lệ thắng.',
   INCOMPATIBLE: 'Báo cáo dùng cấu hình khác; cần kiểm chứng lại.',
@@ -53,12 +53,16 @@ function validReport(report) {
 }
 
 export class ValidationGate {
-  constructor(cfg) { this.cfg = cfg; this.signature = strategyHash(cfg); this.file = path.join(cfg.dataDir, 'calibration.json'); this.report = null; this.loadError = null; this.lastRead = -Infinity; }
+  constructor(cfg) { this.cfg = cfg; this.signature = strategyHash(cfg); this.report = null; this.loadError = null; this.lastRead = -Infinity; this.lastFile = null; }
+  get file() { return path.join(this.cfg.dataDir, `calibration-${this.cfg.exchange}.json`); }
   reload(now = Date.now()) {
-    if (now - this.lastRead < 5000) return;
-    this.lastRead = now;
+    if (this.lastFile === this.file && now - this.lastRead < 5000) return;
+    this.lastRead = now; this.lastFile = this.file;
     try {
-      const report = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      let text;
+      try { text = fs.readFileSync(this.file, 'utf8'); }
+      catch (e) { if (e.code !== 'ENOENT') throw e; text = fs.readFileSync(path.join(this.cfg.dataDir, 'calibration.json'), 'utf8'); }
+      const report = JSON.parse(text);
       if (!validReport(report)) throw new Error('invalid');
       this.report = report; this.loadError = null;
     } catch (e) { this.report = null; this.loadError = e.code === 'ENOENT' ? 'MISSING_PROFILE' : 'INVALID_PROFILE'; }
@@ -80,6 +84,7 @@ export class ValidationGate {
       evaluationStart: report?.evaluation?.startTime ?? null, groupKey: groupKey(signal), policy: simulationPolicy(this.cfg), sourceSha256: report?.source?.sha256 ?? null };
     const fail = code => ({ ...base, status: code, reason: REASONS[code] });
     if (status !== 'READY') return base;
+    if (signal.exchange !== this.cfg.exchange) return fail('INCOMPATIBLE');
     if (signal.layer !== 'CLOSED') return fail('UNSUPPORTED_LAYER');
     if (!Number.isFinite(signal.observedAt) || report.dataThrough > signal.observedAt) return fail('FUTURE_DATA');
     const group = report.groups.find(g => g.key === base.groupKey), n = group?.samples || 0;
