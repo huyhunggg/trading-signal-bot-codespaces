@@ -1,0 +1,20 @@
+{
+  "name": "confluence-signal-bot",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Local crypto futures alert bot: closed-candle confluence and intrabar impulse alerts",
+  "engines": { "node": ">=24.5.0" },
+  "scripts": {
+    "start": "node --use-env-proxy --env-file-if-exists=.env src/main.js",
+    "demo": "node --use-env-proxy --env-file-if-exists=.env src/main.js --demo",
+    "check": "node --use-env-proxy --env-file-if-exists=.env src/main.js --check",
+    "test": "node --test",
+    "telegram:check": "node --use-env-proxy --env-file-if-exists=.env scripts/telegram-check.js",
+    "telegram:chat": "node --use-env-proxy --env-file-if-exists=.env scripts/telegram-chat.js"
+  },
+  "dependencies": {
+    "proxy-agent": "^6.5.0",
+    "ws": "^8.18.3"
+  }
+}

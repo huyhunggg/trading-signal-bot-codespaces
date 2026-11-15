@@ -1,0 +1,12 @@
+node_modules
+.git
+.github
+.devcontainer
+.vscode
+.env
+.env.*
+data
+demo-data
+*.log
+work
+test

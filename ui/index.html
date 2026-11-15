@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1118">
+  <title>Confluence · Crypto Signal Monitor</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <header><a class="brand" href="/" aria-label="Confluence trang chính"><span class="mark">∿</span> CONFLUENCE <small>SIGNAL MONITOR</small></a><div class="clock" id="clock">—</div></header>
+  <main>
+    <div class="intro"><div><div class="eyebrow">USDT PERPETUAL · LONG / SHORT</div><h1>Theo dõi ít hơn.<br>Nhìn rõ tín hiệu.</h1><p>Hai lớp cảnh báo. Một nơi theo dõi BTC, ETH và SOL.</p></div><div class="statusbox"><div><span class="dot" id="dot"></span><strong id="connection">Đang tải trạng thái…</strong></div><p id="source">—</p><span id="telegram">Telegram: —</span></div></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="metrics" aria-label="Tổng quan"><div><span>Phạm vi theo dõi</span><strong id="coverage">—</strong><small id="htf">—</small></div><div><span>Tín hiệu đóng nến gần đây</span><strong id="closedCount">0</strong><small>RSI Hook / Pin-bar Reclaim</small></div><div><span>Cảnh báo sớm gần đây</span><strong id="impulseCount">0</strong><small>Nến chưa đóng · có thể thay đổi</small></div><div><span>Nến 5m đóng sau</span><strong id="countdown">—</strong><small>Giờ hiển thị: Việt Nam (UTC+7)</small></div></section>
+    <section><div class="sectiontitle"><h2>Quan sát thị trường</h2><span>Chỉ báo và điều kiện lấy từ nến đã đóng</span></div><div id="markets" class="markets"><p class="empty">Đang chờ dữ liệu sàn…</p></div></section>
+    <section class="history"><div class="sectiontitle"><div><h2>Nhật ký cảnh báo</h2><p>Tối đa 100 cảnh báo gần nhất. Các mức giá là tham khảo, chưa đặt lệnh.</p></div><div class="filters"><label class="sr-only" for="symbol">Lọc cặp</label><select id="symbol"><option value="">Tất cả cặp</option></select><label class="sr-only" for="layer">Lọc loại cảnh báo</label><select id="layer"><option value="">Cả hai lớp</option><option value="CLOSED">Nến đã đóng</option><option value="IMPULSE">Cảnh báo sớm</option></select></div></div><div id="signals"></div></section>
+    <footer><span class="footbrand">∿ CONFLUENCE</span><p>Tín hiệu theo quy tắc không bảo đảm lợi nhuận. Chưa tính phí, trượt giá và funding. Nhánh pin-bar là cách diễn giải được cấu hình riêng; hiệu quả chưa được backtest.</p></footer>
+  </main>
+</div>
+</body>
+</html>

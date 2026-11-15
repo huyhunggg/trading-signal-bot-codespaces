@@ -1,0 +1,25 @@
+{
+  "name": "Confluence Signal Bot",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24-bookworm",
+  "remoteUser": "node",
+  "containerEnv": {
+    "HOST": "0.0.0.0"
+  },
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": {
+      "label": "Confluence dashboard",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "npm ci --ignore-scripts --no-audit --no-fund",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.exclude": {
+          "node_modules": true
+        }
+      }
+    }
+  }
+}
