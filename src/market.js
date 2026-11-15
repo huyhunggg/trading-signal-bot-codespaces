@@ -53,17 +53,34 @@ export function parseStream(exchange, raw) {
 }
 
 export class Market {
-  constructor(cfg) { this.cfg = cfg; }
+  constructor(cfg, request = getJson) { this.cfg = cfg; this.request = request; }
   async serverTime() {
     const { exchange } = this.cfg;
-    const json = await getJson(ROOT[exchange] + (exchange === 'binance' ? '/fapi/v1/time' : '/v5/market/time'));
+    const json = await this.request(ROOT[exchange] + (exchange === 'binance' ? '/fapi/v1/time' : '/v5/market/time'));
     return exchange === 'binance' ? json.serverTime : Number(json.result.timeSecond) * 1000;
   }
   async candles(symbol, timeframe, serverTime) {
     const { exchange, historyBars } = this.cfg;
     const query = new URLSearchParams(exchange === 'binance' ? { symbol, interval: timeframe, limit: String(historyBars) } : { category: 'linear', symbol, interval: BYBIT_TF[timeframe], limit: String(historyBars) });
-    const json = await getJson(`${ROOT[exchange]}${exchange === 'binance' ? '/fapi/v1/klines' : '/v5/market/kline'}?${query}`);
+    const json = await this.request(`${ROOT[exchange]}${exchange === 'binance' ? '/fapi/v1/klines' : '/v5/market/kline'}?${query}`);
     return parseRest(exchange, exchange === 'binance' ? json : json.result.list, timeframe, serverTime);
+  }
+  async candleRange(symbol, timeframe, startTime, endTime) {
+    const ms = INTERVALS[timeframe], { exchange } = this.cfg;
+    if (!ms || !Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) throw new Error('Khoảng lịch sử không hợp lệ.');
+    const out = []; let cursor = Math.floor(startTime / ms) * ms;
+    while (cursor + ms <= endTime) {
+      const blockEnd = Math.min(endTime, cursor + 1000 * ms);
+      const params = exchange === 'binance'
+        ? { symbol, interval: timeframe, startTime: String(cursor), endTime: String(blockEnd - 1), limit: '1000' }
+        : { category: 'linear', symbol, interval: BYBIT_TF[timeframe], start: String(cursor), end: String(blockEnd - 1), limit: '1000' };
+      const json = await this.request(`${ROOT[exchange]}${exchange === 'binance' ? '/fapi/v1/klines' : '/v5/market/kline'}?${new URLSearchParams(params)}`);
+      const rows = exchange === 'binance' ? json : json.result.list;
+      const page = parseRest(exchange, rows, timeframe, endTime).filter(c => c.openTime >= cursor && c.endTime <= blockEnd);
+      if (!page.length || page[0].openTime !== cursor || page.some((c, i) => i && c.openTime !== page[i - 1].endTime)) throw new Error(`${symbol} ${timeframe}: lịch sử bị thiếu; không tạo báo cáo tỷ lệ thắng.`);
+      out.push(...page); cursor = page.at(-1).endTime;
+    }
+    return out;
   }
   stream(onEvents, onMessage) {
     const { exchange, symbols, timeframes, htf } = this.cfg;

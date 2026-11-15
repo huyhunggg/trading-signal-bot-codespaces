@@ -12,6 +12,11 @@ export function loadConfig(env = process.env) {
     if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${key}: expected integer ${min}..${max}`);
     return value;
   };
+  const decimal = (key, fallback, min, max) => {
+    const value = Number(env[key] || fallback);
+    if (!Number.isFinite(value) || value < min || value > max) throw new Error(`${key}: expected ${min}..${max}`);
+    return value;
+  };
   const cfg = {
     exchange: env.EXCHANGE || 'binance',
     symbols: [...new Set(list('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT'))],
@@ -23,12 +28,24 @@ export function loadConfig(env = process.env) {
     dataDir: env.DATA_DIR || './data', host: env.HOST || '127.0.0.1',
     port: number('PORT', 8787, 1, 65535),
     telegramToken: env.TELEGRAM_BOT_TOKEN || '', telegramChatId: env.TELEGRAM_CHAT_ID || '',
+    validation: {
+      autoCalibrate: (env.AUTO_CALIBRATE || 'true') === 'true',
+      target: decimal('MIN_WIN_RATE_PERCENT', 80, 80, 99) / 100,
+      minSamples: number('VALIDATION_MIN_SAMPLES', 100, 30, 10000),
+      days: number('VALIDATION_DAYS', 180, 7, 730),
+      maxAgeMs: number('VALIDATION_MAX_AGE_DAYS', 7, 1, 30) * 86_400_000,
+      maxHoldBars: number('VALIDATION_MAX_HOLD_BARS', 48, 1, 288),
+      feeBps: decimal('VALIDATION_FEE_BPS', 6, 0, 100),
+      slippageBps: decimal('VALIDATION_SLIPPAGE_BPS', 2, 0, 100),
+      fundingBpsPer8h: decimal('VALIDATION_FUNDING_BPS_8H', 1, 0, 100),
+    },
     rules: RULES,
   };
   if (!['binance', 'bybit'].includes(cfg.exchange)) throw new Error('EXCHANGE must be binance or bybit');
   if (!cfg.symbols.length || cfg.symbols.length > 20 || cfg.symbols.some(s => !/^[A-Z0-9]{2,20}USDT$/.test(s))) throw new Error('SYMBOLS: 1..20 USDT perpetual symbols required');
   if (!['1h', '4h'].includes(cfg.htf) || !cfg.timeframes.length || cfg.timeframes.some(tf => !['5m', '15m'].includes(tf))) throw new Error('TIMEFRAMES: 5m,15m; HTF: 1h or 4h');
   if (env.PINBAR_ENABLED && !['true', 'false'].includes(env.PINBAR_ENABLED)) throw new Error('PINBAR_ENABLED must be true or false');
+  if (env.AUTO_CALIBRATE && !['true', 'false'].includes(env.AUTO_CALIBRATE)) throw new Error('AUTO_CALIBRATE must be true or false');
   if (Boolean(cfg.telegramToken) !== Boolean(cfg.telegramChatId)) throw new Error('Set both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, or leave both empty');
   return cfg;
 }

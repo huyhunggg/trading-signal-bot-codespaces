@@ -6,6 +6,8 @@ import { Market } from './market.js';
 import { Store } from './store.js';
 import { dashboard } from './dashboard.js';
 import { runDemo } from './demo.js';
+import { ValidationGate, REASONS } from './validation.js';
+import { CalibrationJob } from './calibration-job.js';
 
 const cfg = loadConfig(), demo = process.argv.includes('--demo'), check = process.argv.includes('--check');
 if (demo) { cfg.telegramToken = ''; cfg.telegramChatId = ''; cfg.dataDir = './demo-data'; }
@@ -22,28 +24,43 @@ if (check) {
     console.log('Kiểm tra REST thành công. Chạy npm start để xác minh WebSocket và bảng theo dõi.');
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 } else {
-  const store = new Store(cfg), shutdown = new AbortController();
+  const store = new Store(cfg), gate = new ValidationGate(cfg), calibrationJob = new CalibrationJob(cfg), shutdown = new AbortController();
   let engine, socket, offset = 0, stopped = false, status = { phase: demo ? 'DEMO' : 'CONNECTING', error: null, reconnects: 0, connectedAt: null };
   let demoNow = Math.floor(Date.now() / 86_400_000) * 86_400_000 + 12 * 3_600_000;
   const now = () => demo ? demoNow + 1000 : Date.now() + offset;
   const signal = value => {
+    if (!demo && !store.reserveCandidate(value)) return;
+    value.validation = demo ? { eligible: false, status: 'DEMO', reason: REASONS.DEMO, winRate: null } : gate.assess(value, now());
+    if (!demo && !value.validation.eligible) { store.recordCandidate(value); return; }
     if (store.accept(value)) console.log(`${demo ? '[MÔ PHỎNG] ' : ''}${value.layer} ${value.side} ${value.symbol} ${value.timeframe} @ ${value.referencePrice} (${value.branch})`);
   };
   const server = dashboard(cfg, () => ({
     demo, exchange: cfg.exchange, symbols: cfg.symbols, timeframes: cfg.timeframes, htf: cfg.htf,
     pinbarEnabled: cfg.pinbarEnabled, serverNow: now(), streamStaleMs: cfg.streamStaleMs,
     status, rows: [...(engine?.rows.values() || [])], signals: store.state.recent,
+    candidates: store.state.watchlist,
+    validation: demo ? { ...gate.summary(now()), status: 'DEMO', reason: REASONS.DEMO } : gate.summary(now()),
+    calibrationJob: { ...calibrationJob.status, phase: demo ? 'DEMO' : calibrationJob.status.phase },
     telegram: { configured: !!cfg.telegramToken, pending: store.state.pending.length, ...store.state.delivery },
   }));
   server.on('error', e => { console.error(`Dashboard: ${e.code || 'listen failed'}`); stop(); process.exitCode = 1; });
-  server.listen(cfg.port, cfg.host, () => console.log(`Dashboard: http://${cfg.host}:${cfg.port}${demo ? ' · DỮ LIỆU MÔ PHỎNG, TELEGRAM TẮT' : ''}`));
-  const deliveryTimer = setInterval(() => store.flush(now()).catch(() => console.error('Không lưu được trạng thái gửi tin; kiểm tra ổ đĩa.')), 1000);
+  server.listen(cfg.port, cfg.host, () => {
+    const url = process.env.CODESPACE_NAME
+      ? `https://${process.env.CODESPACE_NAME}-${cfg.port}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || 'app.github.dev'}`
+      : `http://${cfg.host === '0.0.0.0' ? '127.0.0.1' : cfg.host}:${cfg.port}`;
+    console.log(`Dashboard: ${url}${demo ? ' · DỮ LIỆU MÔ PHỎNG, TELEGRAM TẮT' : ''}`);
+  });
+  const deliveryTimer = setInterval(() => store.flush(now(), undefined,
+    s => !demo && s.validation?.eligible === true && gate.assess(s, now()).eligible
+  ).catch(() => console.error('Không lưu được trạng thái gửi tin; kiểm tra ổ đĩa.')), 1000);
+  const calibrationTimer = setInterval(() => calibrationJob.tick(gate, { streaming: status.phase === 'STREAMING', demo, now: now() }), 60_000);
   function stop() {
     if (stopped) return;
-    stopped = true; shutdown.abort(); socket?.terminate(); clearInterval(deliveryTimer); server.close(); store.save();
+    stopped = true; shutdown.abort(); socket?.terminate(); calibrationJob.stop(); clearInterval(deliveryTimer); clearInterval(calibrationTimer); server.close(); store.save();
   }
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   if (!cfg.telegramToken && !demo) console.log('Telegram chưa cấu hình: tín hiệu vẫn được lưu và hiển thị cục bộ.');
+  if (!demo) console.log(`Bộ lọc lịch sử: cận dưới Wilson 95% ≥${cfg.validation.target * 100}%, tối thiểu ${cfg.validation.minSamples} lệnh/nhóm. Chưa đủ dữ liệu chỉ hiển thị quan sát.`);
   if (demo) {
     engine = new SignalEngine(cfg, { onSignal: signal, now });
     demoNow = runDemo(engine, cfg);
@@ -89,6 +106,7 @@ if (check) {
         buffered = []; ready = true; failures = 0;
         const connectedAt = Date.now();
         status = { ...status, phase: 'STREAMING', error: null, connectedAt };
+        calibrationJob.tick(gate, { streaming: true, now: now() });
         console.log(`Đang nhận ${cfg.exchange}: ${cfg.symbols.join(', ')} · ${cfg.timeframes.join('/')} · HTF ${cfg.htf}`);
         watchdog = setInterval(() => {
           for (const symbol of cfg.symbols) for (const tf of allTfs) {

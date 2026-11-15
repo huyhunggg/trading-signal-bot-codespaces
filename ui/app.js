@@ -17,8 +17,16 @@ function render(s) {
   notice.textContent = demo ? 'DỮ LIỆU TỔNG HỢP — Các giá và cảnh báo dưới đây chỉ minh họa phần mềm, không phải tín hiệu thị trường thật.' : s.status.error || 'Chưa sẵn sàng phát tín hiệu. Bot đang kết nối và đồng bộ dữ liệu.';
   $('coverage').textContent = `${s.symbols.length} cặp / ${s.timeframes.length} khung`;
   $('htf').textContent = `${s.timeframes.join(' + ')} · xác nhận ${s.htf} đã đóng`;
-  $('closedCount').textContent = s.signals.filter(x => x.layer === 'CLOSED').length;
-  $('impulseCount').textContent = s.signals.filter(x => x.layer === 'IMPULSE').length;
+  $('closedCount').textContent = s.signals.filter(x => x.validation?.eligible === true).length;
+  $('impulseCount').textContent = (s.candidates || []).length;
+  const validation = s.validation;
+  $('validation-target').textContent = `${fmt(100 * (validation?.target ?? 0.8), 0)}%`;
+  $('validation-detail').textContent = validation
+    ? `${validation.reason} Tối thiểu ${validation.minSamples} lệnh/nhóm. ${validation.eligibleGroupCount || 0}/${validation.groupCount || 0} nhóm đạt.${validation.dataThrough ? ' Dữ liệu đến ' + date(validation.dataThrough) + '.' : ''}`
+    : 'Chưa có dữ liệu kiểm chứng. Khởi động lại bot sau khi cập nhật để bật bộ lọc lịch sử.';
+  if (s.calibrationJob?.phase === 'RUNNING') $('validation-detail').textContent += ' Đang tự kiểm chứng lịch sử; bảng giá vẫn tiếp tục cập nhật.';
+  if (s.calibrationJob?.phase === 'FAILED') $('validation-detail').textContent += ' ' + s.calibrationJob.error;
+  if (s.calibrationJob?.phase === 'DELAYED') $('validation-detail').textContent += ' Sàn yêu cầu đợi đến ' + date(s.calibrationJob.retryAt) + ' trước khi tải lịch sử tiếp.';
   const seconds = Math.ceil((300_000 - s.serverNow % 300_000) / 1000);
   $('countdown').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   if ($('symbol').options.length === 1) s.symbols.forEach(symbol => { const o = el('option', symbol); o.value = symbol; $('symbol').append(o); });
@@ -46,10 +54,18 @@ function render(s) {
 }
 function renderSignals() {
   if (!last) return;
-  const signals = last.signals.filter(x => (!$('symbol').value || x.symbol === $('symbol').value) && (!$('layer').value || x.layer === $('layer').value));
+  const records = [...last.signals.map(s => ({ ...s, watch: false })), ...(last.candidates || []).map(s => ({ ...s, watch: true }))];
+  const signals = records.filter(x => (!$('symbol').value || x.symbol === $('symbol').value) && (!$('layer').value || x.layer === $('layer').value) &&
+    (!$('eligibility').value || ($('eligibility').value === 'passed' ? x.validation?.eligible === true : x.validation?.eligible !== true))).sort((a, b) => b.observedAt - a.observedAt);
   const nodes = signals.map(s => {
     const n = el('article', undefined, 'signal'), first = el('div'), title = el('strong', `${s.side} · ${s.symbol} · ${s.timeframe}`, s.side.toLowerCase());
     first.append(title, el('div', `${s.layer === 'CLOSED' ? 'ĐÃ ĐÓNG NẾN' : 'NẾN ĐANG CHẠY'} · ${s.branch}`, s.layer === 'CLOSED' ? 'meta' : 'meta early'));
+    const v = s.validation;
+    first.append(el('div', last.demo ? 'MÔ PHỎNG' : v?.eligible ? 'ĐÃ QUA BỘ LỌC LỊCH SỬ' : s.watch ? 'QUAN SÁT · CHƯA GỬI' : 'LƯU TRỮ · CHƯA KIỂM CHỨNG', `meta ${v?.eligible ? 'long' : 'early'}`));
+    const detail = v?.winRate !== null && v?.winRate !== undefined
+      ? `Thắng lịch sử ${fmt(v.winRate * 100, 1)}% (${v.wins}/${v.samples}); khoảng 95% ${fmt(v.lower95 * 100, 1)}–${fmt(v.upper95 * 100, 1)}%. TB ${fmt(v.meanNetR, 3)}R. ${v.reason}`
+      : `Tỷ lệ thắng: chưa đủ dữ liệu. ${v?.reason || 'Tín hiệu lưu từ bản chưa có kiểm chứng.'}`;
+    first.append(el('div', detail, 'validation-result'));
     n.append(first, labelled('GIÁ THAM KHẢO', fmt(s.referencePrice, 6)), labelled('SL THAM KHẢO', fmt(s.sl, 6)), labelled('TP1 / TP2 THAM KHẢO', `${fmt(s.tp1, 6)}${s.tp2 !== null ? ' / ' + fmt(s.tp2, 6) : ''}`));
     const time = el('time', date(s.observedAt)); time.dateTime = new Date(s.observedAt).toISOString(); n.append(time); return n;
   });
@@ -57,6 +73,7 @@ function renderSignals() {
   $('signals').replaceChildren(...nodes);
 }
 $('symbol').addEventListener('change', renderSignals); $('layer').addEventListener('change', renderSignals);
+$('eligibility').addEventListener('change', renderSignals);
 async function poll() {
   try {
     const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(4000) });

@@ -1,10 +1,41 @@
 # Confluence — bot cảnh báo crypto LONG/SHORT
 
-Bản 0.1.1 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Dữ liệu công khai Binance hoặc Bybit; không cần API key tài khoản sàn. Có bảng theo dõi và cảnh báo Telegram. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
+Bản 0.2.0 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Có bảng theo dõi giá và cơ hội LONG/SHORT, thống kê thắng lịch sử theo nhóm và Telegram. Dữ liệu công khai Binance hoặc Bybit, không cần API key tài khoản sàn. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
 
 **Trạng thái bàn giao:** phần tính tín hiệu, lưu trạng thái, gửi tin có thử lại và HTTP dashboard đã được kiểm thử tự động. Môi trường xây dựng bị Binance trả HTTP 451 và Bybit trả HTTP 403 do giới hạn truy cập/khu vực. Chưa xác minh dữ liệu WebSocket live, Telegram thực tế hoặc hiệu quả đầu tư. Chưa triển khai một tiến trình chạy 24/7. Giao diện đã kiểm tra HTTP và cú pháp JavaScript; chưa kiểm tra hiển thị trong trình duyệt ở môi trường này.
 
-Bot chỉ cảnh báo. Các mức entry/SL/TP là **giá tham khảo**, không phải xác nhận khớp lệnh. Chưa tự đặt, chốt hoặc dời SL, và chưa mô phỏng kết quả vị thế. Không có số liệu chứng minh mức thắng 80%+ hoặc tham số “tối ưu”.
+Bot chỉ cảnh báo, chưa tự đặt, chốt hoặc dời SL. Các mức entry/SL/TP là **giá tham khảo**, không phải xác nhận khớp lệnh. Có bộ mô phỏng lịch sử để kiểm chứng và lọc thông báo; chưa có số liệu thực chứng minh chiến lược đạt 80%+ trong môi trường xây dựng bị giới hạn API. Không gán điểm hội tụ thành xác suất thắng và không bảo đảm lợi nhuận tương lai.
+
+## Xem tỷ lệ thắng và bộ lọc mục tiêu 80 phần trăm
+
+Mỗi tín hiệu chính thức hiển thị **tỷ lệ thắng lịch sử của nhóm tương tự**, số lệnh mẫu, khoảng Wilson 95% và lãi/lỗ trung bình sau chi phí giả định. Nhóm được tách theo sàn, coin, khung thời gian, LONG/SHORT và nhánh RSI Hook/Pin-bar; không lấy tỷ lệ thắng của BTC LONG để gán cho SOL SHORT. Đây chưa phải mô hình xác suất riêng đã được hiệu chỉnh cho từng lệnh mới.
+
+Thông báo chính thức cần đồng thời đạt:
+
+- Tối thiểu **100 lệnh** trong nhóm trên giai đoạn kiểm chứng.
+- **Cận dưới Wilson 95% ≥80%**, thay vì chỉ yêu cầu tỷ lệ đếm thô ≥80%. Ví dụ minh họa: 80 thắng/100 lệnh chưa đủ điều kiện này; 90/100 có cận dưới khoảng 82.6%.
+- Lãi/lỗ trung bình sau chi phí giả định **dương**.
+- Báo cáo đúng cấu hình và sàn hiện tại, chưa quá 7 ngày, không chứa dữ liệu sau thời điểm tín hiệu.
+
+Khi chưa đủ dữ liệu hoặc không đạt ngưỡng, cơ hội vẫn hiện trong mục **Tín hiệu và cơ hội quan sát**, kèm lý do bị lọc, nhưng không gửi Telegram. Tỷ lệ chưa biết hiển thị “chưa đủ dữ liệu”, không tự điền 80%. Lớp xung lực trong nến được giữ ở mục quan sát vì nến 5m/15m không tái hiện đủ diễn biến để kiểm chứng điểm kích hoạt trong nến. Tín hiệu cũ trong hàng đợi chưa qua kiểm chứng cũng không được gửi lại sau nâng cấp.
+
+Khi kết nối live đã hoạt động, mặc định bot tự chạy kiểm chứng lịch sử trong tiến trình riêng; bảng giá tiếp tục phản hồi. Báo cáo được làm mới sau khoảng một ngày khi bot đang chạy, tối đa một tác vụ đồng thời và một lần thử mỗi giờ nếu lỗi. Có thể đặt `AUTO_CALIBRATE=false` để chỉ chạy thủ công:
+
+```sh
+npm run calibrate
+```
+
+Mặc định tải 180 ngày lịch sử và thêm nến khởi tạo EMA. Quy tắc giữ cố định; thống kê chỉ lấy **30% giai đoạn cuối**, không tự dò tham số trên tập đó để ép đạt 80%. Báo cáo ở `data/calibration.json`, log ở `data/calibration.log`; file `data/validation-trades-*.jsonl` ghi từng kết quả mô phỏng và được dẫn bằng SHA256 trong báo cáo. Bot tự nạp báo cáo mới, không cần khởi động lại để đọc thống kê. Nếu sàn từ chối API hoặc lịch sử thiếu, báo cáo mới không được tạo; không thay bằng dữ liệu mô phỏng.
+
+### Quy ước tính thắng
+
+“Thắng” nghĩa là **tổng lãi/lỗ của cả vị thế sau chi phí giả định >0**. Chạm TP1 không tự động được tính thắng. Giá vào mô phỏng là Open của nến kế tiếp, cộng trượt giá bất lợi; bỏ qua nếu giá mở/giá khớp giả định đã vượt SL hoặc TP1. Mô hình chưa tái hiện độ trễ thực tế từ đóng nến đến nhận thông báo.
+
+TP1 chốt 50%, phần còn lại TP2, dời SL về giá khớp giả định sau TP1. Nếu nến chạm cả TP lẫn SL mà không biết thứ tự, dùng cách tính bất lợi; giá Open đã biết được xử lý trước các cực trị trong nến. Gap qua SL khớp ở giá mở bất lợi, gap qua TP không được hưởng giá tốt hơn mức TP. Phần vị thế chưa đóng sau **48 nến** được đóng giả định ở Close của nến thứ 48; kết quả này được đánh dấu `TIME_EXIT` và tính vào thống kê. Bỏ toàn bộ các điểm vào ở cuối dữ liệu không có đủ 48 nến theo dõi, kể cả các lệnh kết thúc sớm, để tránh chọn riêng các kết quả nhanh đã biết.
+
+Chi phí mặc định là **6 bps phí và 2 bps trượt giá cho mỗi lần khớp**, cùng giả định funding luôn bị tính phí 1 bps/8 giờ, quy đổi theo thời gian và tỷ trọng vị thế còn lại. Với lần thoát trong nến chưa rõ thời điểm, phí funding quy đổi cho cả nến theo hướng bảo thủ. Đây không phải biểu phí, funding hoặc giá khớp thật của tài khoản bạn; cần chỉnh theo thực tế trước khi diễn giải hiệu quả. 1 bps = 0.01%.
+
+Khoảng Wilson là tham khảo theo giả định mẫu nhị thức độc lập. Các tín hiệu thị trường có thể tương quan hoặc chồng lấn, và chế độ thị trường có thể thay đổi; cận dưới này không phải bảo đảm rằng xác suất thật của lệnh tiếp theo đạt 80%. Chưa có kiểm chứng paper trading liên tục theo dữ liệu live.
 
 ## Chạy trên trình duyệt bằng GitHub Codespaces
 
@@ -87,7 +118,7 @@ npm run check
 npm start
 ```
 
-`check` xác minh REST và dữ liệu nến; chưa xác minh WebSocket. Sau `npm start`, dashboard chuyển sang **Đang nhận dữ liệu** khi đã kết nối WebSocket và đồng bộ lịch sử. Telegram báo “đã cấu hình” chỉ có nghĩa là đã điền hai trường; chạy `telegram:check` để kiểm tra chúng, và trạng thái “gửi gần nhất” chỉ xuất hiện sau lần gửi thành công.
+`check` xác minh REST và dữ liệu nến; chưa xác minh WebSocket. Sau `npm start`, dashboard chuyển sang **Đang nhận dữ liệu** khi đã kết nối WebSocket và đồng bộ lịch sử. Việc kiểm chứng lịch sử diễn ra riêng; có thể chưa nhóm nào đạt bộ lọc 80% dù luồng giá hoạt động. Telegram báo “đã cấu hình” chỉ có nghĩa là đã điền hai trường; chạy `telegram:check` để kiểm tra chúng, và trạng thái “gửi gần nhất” chỉ xuất hiện sau lần gửi thành công.
 
 Nếu API trả 403/451, bot hiển thị trạng thái bị từ chối và dừng tự thử kết nối dữ liệu. Kiểm tra quyền truy cập/điều khoản của sàn đối với nơi chạy; khi đã có quyền truy cập hợp lệ, khởi động lại bot. Không dùng dữ liệu demo làm dữ liệu thật. Khi mất kết nối thông thường, bot tự kết nối lại và tải lịch sử bù. Giá cũ vẫn được ghi rõ trên dashboard.
 
@@ -167,6 +198,15 @@ Nhánh pin-bar mặc định được bật để triển khai hai cơ chế mà
 | `PORT` | `8787` | Cổng bảng theo dõi |
 | `HOST` | `127.0.0.1` | Chỉ máy cục bộ theo mặc định |
 | `DATA_DIR` | `./data` | Trạng thái và nhật ký thật |
+| `MIN_WIN_RATE_PERCENT` | `80` | Ngưỡng cận dưới Wilson, cho phép 80–99 |
+| `AUTO_CALIBRATE` | `true` | Tự kiểm chứng khi có kết nối live |
+| `VALIDATION_MIN_SAMPLES` | `100` | Số lệnh tối thiểu mỗi nhóm |
+| `VALIDATION_DAYS` | `180` | Số ngày lịch sử tải để kiểm chứng |
+| `VALIDATION_MAX_AGE_DAYS` | `7` | Tuổi tối đa của báo cáo |
+| `VALIDATION_MAX_HOLD_BARS` | `48` | Hạn giữ vị thế trong mô phỏng |
+| `VALIDATION_FEE_BPS` | `6` | Phí giả định cho mỗi lần khớp |
+| `VALIDATION_SLIPPAGE_BPS` | `2` | Trượt giá bất lợi giả định mỗi lần khớp |
+| `VALIDATION_FUNDING_BPS_8H` | `1` | Chi phí funding giả định mỗi 8 giờ |
 
 Các ngưỡng chiến lược hiện giữ trong `src/config.js` → `RULES`. Đổi cấu hình rồi khởi động lại. Demo dùng thư mục `demo-data` riêng. Không xóa `data` khi nâng cấp nếu muốn giữ chống báo trùng và lịch sử.
 
@@ -176,7 +216,7 @@ Các ngưỡng chiến lược hiện giữ trong `src/config.js` → `RULES`. �
 npm test
 ```
 
-Kiểm thử bao gồm công thức chỉ báo; điều kiện LONG/SHORT; hai nhánh và hai lớp; chọn HTF theo thời điểm; đợi HTF tại ranh giới giờ; dữ liệu thiếu/cũ; chống báo trùng qua khởi động lại; thời hạn/thử lại gửi tin bằng bộ gửi giả; chuẩn hóa dữ liệu hai sàn; và HTTP dashboard. Không dùng tiền thật hoặc gửi Telegram trong kiểm thử.
+Kiểm thử bao gồm chỉ báo, LONG/SHORT, chọn HTF theo thời điểm, dữ liệu thiếu/cũ, chống báo trùng, mô phỏng phí và gap/TP/SL, kiểm tra không dùng dữ liệu tương lai, cỡ mẫu và khoảng Wilson, phân trang dữ liệu hai sàn, hàng đợi gửi tin, tác vụ tự kiểm chứng và HTTP dashboard của tiến trình demo. Không dùng tiền thật hoặc gửi Telegram trong kiểm thử.
 
 - `src/market.js`: REST, WebSocket và chuẩn hóa dữ liệu hai sàn.
 - `src/indicators.js`: các chỉ báo có tính nhân quả theo thời gian.
@@ -184,13 +224,17 @@ Kiểm thử bao gồm công thức chỉ báo; điều kiện LONG/SHORT; hai n
 - `src/engine.js`: đồng bộ khung lớn, kiểm tra dữ liệu, điều phối tín hiệu.
 - `src/store.js`: lưu trạng thái, nhật ký và Telegram.
 - `src/main.js`: khởi động, khôi phục kết nối và demo.
+- `src/backtest.js`: mô phỏng kết quả lịch sử và chia giai đoạn kiểm chứng.
+- `src/validation.js`: thống kê nhóm, khoảng Wilson và điều kiện gửi.
+- `src/calibration-job.js`: tác vụ tự kiểm chứng trong tiến trình riêng.
+- `scripts/calibrate.js`: lấy lịch sử, tạo báo cáo và nhật ký kết quả.
 - `ui/`: dashboard chỉ đọc.
 
 Repository có sẵn workflow `.github/workflows/ci.yml` để chạy kiểm thử và build Docker image khi push hoặc tạo pull request. Workflow không chạy bot liên tục hoặc tự gửi Telegram.
 
-Bản đóng gói đã được kiểm tra: 25 kiểm thử đạt; Docker image build thành công với chứng chỉ proxy của môi trường kiểm thử được cấp tạm qua BuildKit secret; container chạy bằng user thường, ghi trạng thái vào vùng lưu riêng và phục vụ được dashboard qua Host chuyển tiếp. Không đưa chứng chỉ proxy vào repository/image. Cấu hình Codespaces đã đối chiếu image Node.js 24 có sẵn; chưa mở một Codespace trong tài khoản của bạn.
+Bộ kiểm thử chạy trong GitHub Actions; Docker image được build trong cùng workflow. Kiểm tra HTTP của tiến trình demo xác nhận sáu bảng giá và trạng thái tỷ lệ chưa biết. Chưa kiểm tra hiển thị trình duyệt tự động trong môi trường xây dựng này.
 
-Đây là cách triển khai mới từ bản mô tả bạn cung cấp, chưa đối chiếu được file `server.js` trên máy Windows của bạn. Trước khi dùng tiền thật ở phiên bản tự giao dịch sau này, cần backtest có phí/trượt giá/funding, chia tập đánh giá theo thời gian, thống kê riêng từng nhánh, rồi chạy paper trading theo dữ liệu live. Chưa có các bước này trong bản 0.1.1.
+Đây là cách triển khai mới từ bản mô tả bạn cung cấp. Bản 0.2.0 có công cụ backtest với chi phí giả định và chia giai đoạn theo thời gian; chưa có kết quả thị trường thực ở môi trường xây dựng bị giới hạn API và chưa paper trading live. Trước khi tự giao dịch tiền thật ở phiên bản sau cần kiểm chứng thêm các giả định khớp lệnh, chi phí và hiệu quả ngoài mẫu.
 
 ## Tài liệu API đã đối chiếu
 
