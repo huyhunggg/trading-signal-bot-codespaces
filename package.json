@@ -1,10 +1,12 @@
 {
   "name": "confluence-signal-bot",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Local crypto futures alert bot: closed-candle confluence and intrabar impulse alerts",
-  "engines": { "node": ">=24.5.0" },
+  "engines": {
+    "node": ">=24.5.0"
+  },
   "scripts": {
     "start": "node --use-env-proxy --env-file-if-exists=.env src/main.js",
     "demo": "node --use-env-proxy --env-file-if-exists=.env src/main.js --demo",

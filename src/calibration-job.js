@@ -28,16 +28,23 @@ export class CalibrationJob {
       fs.mkdirSync(this.cfg.dataDir, { recursive: true, mode: 0o700 });
       fd = fs.openSync(path.join(this.cfg.dataDir, 'calibration.log'), 'a', 0o600);
       const child = this.spawnProcess(process.execPath, [`--max-old-space-size=${this.cfg.validation.heapMb}`, '--use-env-proxy', '--env-file-if-exists=.env', fileURLToPath(new URL('../scripts/calibrate.js', import.meta.url))],
-        { cwd: process.cwd(), env: { ...process.env, DATA_DIR: this.cfg.dataDir, EXCHANGE: this.cfg.exchange, DATA_SOURCE_MODE: 'fixed' }, stdio: ['ignore', fd, fd] });
+        { cwd: process.cwd(), env: { ...process.env, DATA_DIR: this.cfg.dataDir, EXCHANGE: this.cfg.exchange, DATA_SOURCE_MODE: 'fixed' }, stdio: ['ignore', fd, fd, 'ipc'] });
       this.child = child; this.status = { phase: 'RUNNING', exchange: this.cfg.exchange, startedAt: now, completedAt: null, error: null };
+      let failure = null;
+      child.on('message', message => {
+        if (message?.type === 'progress' && typeof message.detail === 'string') {
+          this.status = { ...this.status, progress: message.detail.slice(0, 300), updatedAt: Date.now() };
+        }
+        if (message?.type === 'failure' && typeof message.detail === 'string') failure = message.detail.slice(0, 300);
+      });
       let finished = false;
-      const finish = ok => {
+      const finish = (ok, signal) => {
         if (finished) return; finished = true; this.child = null;
         this.status = { ...this.status, phase: ok ? 'COMPLETED' : 'FAILED', completedAt: Date.now(),
-          error: ok ? null : 'Chưa kiểm chứng được lịch sử. Xem data/calibration.log; không gán tỷ lệ thắng giả.' };
+          error: ok ? null : failure || (signal ? `Tiến trình kiểm chứng dừng (${signal}); cần kiểm tra giới hạn bộ nhớ và nhật ký máy chủ.` : 'Chưa kiểm chứng được lịch sử. Xem data/calibration.log; không gán tỷ lệ thắng giả.') };
         gate.lastRead = -Infinity;
       };
-      child.once('exit', code => finish(code === 0)); child.once('error', () => finish(false));
+      child.once('exit', (code, signal) => finish(code === 0, signal)); child.once('error', () => finish(false));
       return true;
     } catch {
       this.status = { phase: 'FAILED', startedAt: now, completedAt: Date.now(), error: 'Không khởi động được kiểm chứng lịch sử.' }; return false;

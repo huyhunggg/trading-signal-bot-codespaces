@@ -56,3 +56,14 @@ test('automatic downloads honor a server retry-after longer than the hourly retr
   assert.equal(job.status.phase, 'DELAYED'); assert.equal(calls.length, 0);
   assert.equal(job.tick(gate, { streaming: true, now: now + 7200001 }), true);
 });
+test('worker progress and a specific failure reach the dashboard without exposing log files', t => {
+  const { job, gate, children, calls } = setup(t);
+  job.tick(gate, { streaming: true, now: 1000000 });
+  assert.equal(calls[0][2].stdio[3], 'ipc');
+  children[0].emit('message', { type: 'progress', detail: 'Đang tải BTCUSDT 5m' });
+  assert.equal(job.status.progress, 'Đang tải BTCUSDT 5m');
+  children[0].emit('message', { type: 'failure', detail: 'BTCUSDT 5m: lịch sử OKX bị thiếu.' });
+  children[0].emit('exit', 1);
+  assert.equal(job.status.error, 'BTCUSDT 5m: lịch sử OKX bị thiếu.');
+  assert.equal(gate.lastRead, -Infinity);
+});

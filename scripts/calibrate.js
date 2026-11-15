@@ -9,6 +9,7 @@ import { cachedHistory } from '../src/history-cache.js';
 
 const args = process.argv.slice(2);
 const cfg = loadConfig({ ...process.env, TELEGRAM_BOT_TOKEN: '', TELEGRAM_CHAT_ID: '' });
+const progress = detail => { console.log(detail); if (process.connected) process.send({ type: 'progress', detail }); };
 try {
   if (args.length && (args.length !== 2 || args[0] !== '--input')) throw new Error('Cách dùng: npm run calibrate [-- --input data/market-history.json]');
   let dataset;
@@ -17,20 +18,21 @@ try {
     if (cfg.sourceMode === 'auto' && ['binance', 'bybit', 'okx'].includes(dataset.exchange)) cfg.exchange = dataset.exchange;
     if (dataset.source?.kind !== 'exchange-ohlcv') throw new Error('Chỉ dùng dữ liệu OHLCV có nguồn sàn; không dùng dữ liệu demo để xác nhận tỷ lệ thắng.');
   } else {
-    const { market, serverTime } = await new SourceManager(cfg).choose(exchange => console.log(`Kiểm tra nguồn lịch sử ${exchange}...`));
+    const { market, serverTime } = await new SourceManager(cfg).choose(exchange => progress(`Kiểm tra nguồn lịch sử ${exchange}...`));
     const endTime = Math.floor(serverTime / Math.max(...cfg.timeframes.map(tf => INTERVALS[tf]))) * Math.max(...cfg.timeframes.map(tf => INTERVALS[tf]));
     const startTime = endTime - cfg.validation.days * 86_400_000;
     const warmupStart = startTime - (cfg.historyBars + 1) * INTERVALS[cfg.htf];
     dataset = { schemaVersion: 1, exchange: cfg.exchange, startTime, endTime,
       source: { kind: 'exchange-ohlcv', downloadedAt: serverTime }, series: {} };
     for (const symbol of cfg.symbols) for (const tf of [...new Set([...cfg.timeframes, cfg.htf])]) {
-      console.log(`Đang tải ${symbol} ${tf}: ${cfg.validation.days} ngày và lịch sử khởi tạo...`);
+      progress(`Đang tải ${symbol} ${tf}: ${cfg.validation.days} ngày và lịch sử khởi tạo...`);
       dataset.series[`${symbol}:${tf}`] = await cachedHistory(market, cfg, symbol, tf, warmupStart, endTime);
-      console.log(`Đã nhận ${dataset.series[`${symbol}:${tf}`].length} nến đóng.`);
+      progress(`Đã nhận ${symbol} ${tf}: ${dataset.series[`${symbol}:${tf}`].length} nến đóng.`);
     }
   }
   const trades = [];
-  const report = buildReport(cfg, dataset, p => console.log(`Kiểm chứng ${p.symbol} ${p.timeframe}: ${p.candidates} cơ hội, ${p.groups} nhóm.`), trade => trades.push(trade));
+  progress('Đang tính kết quả sau phí, trượt giá và funding...');
+  const report = buildReport(cfg, dataset, p => progress(`Kiểm chứng ${p.symbol} ${p.timeframe}: ${p.candidates} cơ hội, ${p.groups} nhóm.`), trade => trades.push(trade));
   fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 });
   const audit = trades.map(t => JSON.stringify(t)).join('\n') + (trades.length ? '\n' : '');
   const auditHash = createHash('sha256').update(audit).digest('hex');
@@ -51,6 +53,7 @@ try {
     } catch {}
   }
   console.error(`Chưa tạo được báo cáo kiểm chứng: ${e.message}`);
+  if (process.connected) process.send({ type: 'failure', detail: e.message });
   console.error('Không gán tỷ lệ 80% và không thay báo cáo cũ bằng dữ liệu thiếu hoặc mô phỏng.');
   process.exitCode = 1;
 }

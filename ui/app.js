@@ -25,7 +25,7 @@ function render(s) {
   $('validation-detail').textContent = validation
     ? `${validation.reason} Tối thiểu ${validation.minSamples} lệnh/nhóm. ${validation.eligibleGroupCount || 0}/${validation.groupCount || 0} nhóm đạt.${validation.dataThrough ? ' Dữ liệu đến ' + date(validation.dataThrough) + '.' : ''}`
     : 'Chưa có dữ liệu kiểm chứng. Khởi động lại bot sau khi cập nhật để bật bộ lọc lịch sử.';
-  if (s.calibrationJob?.phase === 'RUNNING') $('validation-detail').textContent += ' Đang tự kiểm chứng lịch sử; bảng giá vẫn tiếp tục cập nhật.';
+  if (s.calibrationJob?.phase === 'RUNNING') $('validation-detail').textContent += ' Đang tự kiểm chứng lịch sử; bảng giá vẫn tiếp tục cập nhật.' + (s.calibrationJob.progress ? ' ' + s.calibrationJob.progress : '');
   if (s.calibrationJob?.phase === 'FAILED') $('validation-detail').textContent += ' ' + s.calibrationJob.error;
   if (s.calibrationJob?.phase === 'DELAYED') $('validation-detail').textContent += ' Sàn yêu cầu đợi đến ' + date(s.calibrationJob.retryAt) + ' trước khi tải lịch sử tiếp.';
   const seconds = Math.ceil((300_000 - s.serverNow % 300_000) / 1000);
