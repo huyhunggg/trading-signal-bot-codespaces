@@ -8,6 +8,10 @@
     "node": ">=24.5.0"
   },
   "scripts": {
+    "okx:demo:setup": "node scripts/setup-okx-demo.js",
+    "okx:demo": "node --use-env-proxy --env-file-if-exists=.env --env-file-if-exists=.env.okx-demo src/main.js --okx-demo",
+    "okx:demo:pause": "node --env-file-if-exists=.env scripts/okx-demo-control.js pause",
+    "okx:demo:resume": "node --env-file-if-exists=.env scripts/okx-demo-control.js resume",
     "start": "node --use-env-proxy --env-file-if-exists=.env src/main.js",
     "demo": "node --use-env-proxy --env-file-if-exists=.env src/main.js --demo",
     "check": "node --use-env-proxy --env-file-if-exists=.env src/main.js --check",
@@ -21,3 +25,4 @@
     "ws": "^8.18.3"
   }
 }
+

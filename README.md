@@ -1,4 +1,56 @@
-# Confluence — bot cảnh báo crypto LONG/SHORT
+# Confluence — tín hiệu crypto và OKX Demo tự động
+
+## Mới: tự giao dịch trên tài khoản OKX Demo
+
+`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (chỉ minh họa giao diện bằng giá tổng hợp). Không có chế độ đặt lệnh tiền thật.
+
+### Bắt đầu trong Codespaces
+
+1. Dừng bot cũ bằng **Ctrl+C** trong Terminal. Chỉ chạy một tiến trình giao dịch trên một tài khoản Demo và giữ cổng Codespaces ở chế độ **Private**.
+2. Trên OKX, mở **Trade → Demo Trading → Demo Trading API**, tạo API với quyền **Read** và **Trade**. Không dùng API của tài khoản tiền thật. Chuẩn bị số dư USDT ảo trong tài khoản giao dịch Demo; chọn chế độ vị thế **One-way / Net** và chế độ tài khoản hỗ trợ futures isolated.
+3. Trong Terminal, chạy lần lượt:
+
+```bash
+npm ci --ignore-scripts
+npm run okx:demo:setup
+HOST=0.0.0.0 PORT=8787 npm run okx:demo
+```
+
+Lệnh setup hỏi key, secret và passphrase với ký tự nhập được ẩn; lưu vào `.env.okx-demo` chỉ đọc/ghi bởi người dùng hiện tại. File đã bị Git bỏ qua. Không gửi thông tin này vào chat, ảnh chụp, repository hoặc dashboard. API chưa được kiểm tra cho đến lúc chạy bot. Nếu cần nhập lại, dừng bot rồi chạy lại setup.
+
+4. Mở cổng **8787**. Phần đầu dashboard có **OKX DEMO · Tự động giao dịch bằng tiền ảo**, số dư, trạng thái tài khoản, vị thế, lệnh bot và lịch sử vị thế đóng. Chờ trạng thái **Đang chờ tín hiệu để vào lệnh**. Bot chỉ dùng tín hiệu đóng nến mới, không đặt lệnh ép buộc và không phát lại tín hiệu cũ.
+5. Đối chiếu lệnh và SL/TP trong ứng dụng **OKX Demo Trading**. Chưa có lệnh nếu chiến lược chưa xuất hiện tín hiệu; việc lấy được giá không đồng nghĩa bot sẽ lập tức mua/bán.
+
+### Quy tắc của bản thử nghiệm
+
+- Khóa OKX và nguồn dữ liệu OKX; không chuyển sàn tự động. Mọi yêu cầu giao dịch dùng `https://openapi.okx.com` và header `x-simulated-trading: 1`, không theo redirect; không có tùy chọn chuyển tiền thật.
+- Chỉ USDT linear perpetual, **isolated 1x**, tối đa **một vị thế trên tài khoản**. Bất kỳ vị thế, lệnh chờ hoặc SL/TP chờ hiện có đều chặn mở thêm. Dùng tài khoản Demo dành riêng cho bot, không đặt lệnh thủ công hoặc chạy bản sao khác trong lúc bot hoạt động.
+- Mặc định hạn mức danh nghĩa **50 USDT/lệnh**, rủi ro theo khoảng SL và chi phí dự phòng **1 USDT/lệnh**. Đọc `ctVal`, `ctMult`, `lotSz`, `minSz`, `tickSz` từ sàn; bỏ qua khi khối lượng dưới tối thiểu, giá đã vượt SL/TP, giá lệch quá 0.5%, ticker cũ hơn 15 giây hoặc tín hiệu cũ hơn 60 giây. Các hạn mức là tính toán trước khi gửi; trượt giá có thể làm giá trị thực tế lớn hơn.
+- Lệnh market gửi kèm SL và TP lên sàn. **Chốt toàn bộ tại TP1 hoặc SL**, chưa có chốt 50%/TP2/dời SL. Vì khác cách thoát lệnh của backtest cũ, thống kê đó không đánh giá hiệu quả chế độ Demo này.
+- Luồng thử nghiệm dùng tín hiệu đóng nến **không yêu cầu đạt bộ lọc lịch sử 80%**; dashboard ghi rõ việc này. Không mở theo cảnh báo xung lực chưa đóng nến. Telegram tắt và không tự tải kiểm chứng lịch sử trong chế độ này. `npm start` giữ luồng cảnh báo và bộ lọc cũ.
+- Khi vốn USDT (gồm lãi/lỗ chưa chốt) giảm **5 USDT** so với lần đồng bộ đầu của ngày UTC, bot khóa mở lệnh mới. Không tự đóng cưỡng bức vị thế. Đây là giới hạn dừng mở lệnh, không bảo đảm lỗ tối đa; nạp/rút/reset số dư Demo làm sai so sánh nên không thay đổi vốn khi chạy.
+- Ghi ý định đặt lệnh trước khi gửi, dùng client ID cố định và đối chiếu trạng thái khi khởi động lại. Timeout gửi lệnh không được tự gửi lại. Lệnh market chưa khớp đủ sau 30 giây, lệnh hủy đã khớp một phần, hoặc không xác minh được SL/TP sẽ khóa mở thêm và yêu cầu kiểm tra trên OKX. Bot không tự vá SL/TP hoặc đóng vị thế trong trường hợp đó.
+- File `data/okx-demo.lock` ngăn hai tiến trình dùng cùng thư mục dữ liệu. Cơ chế này không ngăn bản bot trên máy/thư mục khác; chỉ chạy một bản trên tài khoản. Giữ `data/okx-demo-trades.json` bền vững, không xóa để ép bot đặt lại lệnh.
+
+Có thể đặt giới hạn thấp hơn trong `.env` bằng `OKX_DEMO_MAX_NOTIONAL_USDT`, `OKX_DEMO_RISK_USDT`, `OKX_DEMO_DAILY_LOSS_USDT`. Giới hạn cứng của bản Demo tương ứng 100, 2 và 10 USDT.
+
+### Dừng / kiểm tra lỗi
+
+Trong **Terminal mới**, chạy:
+
+```bash
+npm run okx:demo:pause
+```
+
+Bot ngừng mở thêm sau khi kiểm tra tài khoản; một yêu cầu đang gửi có thể vẫn hoàn tất. SL/TP ở sàn vẫn hoạt động. Tiếp tục sau tạm dừng thông thường bằng `npm run okx:demo:resume`. Nhấn **Ctrl+C** dừng tiến trình, nhưng không hủy lệnh hay đóng vị thế ở OKX; thực hiện các việc đó trong ứng dụng OKX Demo nếu cần.
+
+Trạng thái **HALTED** là khóa lỗi bền vững, không được xóa bằng resume hoặc khởi động lại. Trước khi can thiệp nhật ký, đối chiếu client ID, lệnh chờ, SL/TP và vị thế trên OKX; cần người hiểu code kiểm tra và khôi phục. Không xóa file nhật ký hoặc tạo bản bot khác để bỏ qua khóa.
+
+**Kiểm chứng bản nâng cấp:** kiểm thử tự động dùng API giả lập cho chữ ký/header Demo, tính hợp đồng, giới hạn vốn, chống trùng, khởi động lại, timeout, khớp một phần và SL/TP. Chưa xác minh đặt/khớp lệnh trên tài khoản OKX Demo thật vì chưa có thông tin API của người dùng. Đặt lệnh thật trên môi trường Demo là bước kiểm thử tiếp theo; kết quả Demo không chứng minh lợi nhuận tiền thật. Codespaces có thể tự dừng.
+
+Tài liệu API: [OKX Demo Trading Services](https://www.okx.com/docs-v5/en/#overview-demo-trading-services), [Place order và attached TP/SL](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
+## Chế độ cảnh báo hiện có
 
 Bản 0.3.0 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Có bảng theo dõi giá và cơ hội LONG/SHORT, thống kê thắng lịch sử theo nhóm và Telegram. Dữ liệu công khai OKX, Bybit hoặc Binance, không cần API key tài khoản sàn. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
 
@@ -264,3 +316,4 @@ Bộ kiểm thử chạy trong GitHub Actions; Docker image được build trong
 - Bybit REST kline: https://bybit-exchange.github.io/docs/v5/market/kline
 - OKX REST/WS, candle history, volume và rate limits: https://www.okx.com/docs-v5/en/
 - Telegram Bot API: https://core.telegram.org/bots/api
+

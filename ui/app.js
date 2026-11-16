@@ -6,6 +6,7 @@ const el = (tag, text, className) => { const n = document.createElement(tag); if
 const labelled = (label, value, className = 'num') => { const n = el('div'); n.append(el('small', label), el('div', value, className)); return n; };
 function render(s) {
   last = s;
+  renderTrading(s.trading);
   const live = s.status.phase === 'STREAMING', demo = s.demo;
   $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : s.status.phase === 'STREAMING' && s.status.transport === 'REST_POLL' ? 'Đang cập nhật giá qua REST' : ({ STREAMING: 'Đang nhận dữ liệu WebSocket', SELECTING: 'Đang chọn nguồn giá', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', PAUSED: 'Đang chờ nguồn giá mở lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
   $('dot').className = 'dot ' + (demo ? 'demo' : live ? 'online' : '');
@@ -53,6 +54,19 @@ function render(s) {
   }
   $('markets').replaceChildren(...cards); renderSignals();
 }
+function renderTrading(t) {
+  $('trading-panel').hidden = !t;
+  if (!t) return;
+  const names = { STARTING: 'Đang kiểm tra', NEED_KEYS: 'Chưa nhập API Demo', READY: 'Đang chờ tín hiệu để vào lệnh',
+    POSITION_OPEN: 'Đang quản lý / chờ vị thế', ORDER_SENT: 'Đã gửi lệnh', PAUSED: 'Tạm dừng mở lệnh', HALTED: 'Đã dừng vì cần kiểm tra', ERROR: 'Lỗi kết nối / cấu hình' };
+  $('trading-status').textContent = names[t.status] || t.status;
+  $('trading-reason').textContent = t.reason;
+  $('trading-limits').textContent = `Isolated 1x · tối đa 1 vị thế · hạn mức ${fmt(t.maxNotional)} USDT/lệnh · rủi ro SL dự kiến ≤${fmt(t.risk)} USDT · dừng mở lệnh khi vốn giảm ${fmt(t.dailyLoss)} USDT/ngày UTC. Giá khớp có thể trượt.`;
+  $('trading-account').replaceChildren(labelled('Vốn USDT Demo', fmt(t.equity)), labelled('Lãi/lỗ chưa chốt', fmt(t.unrealizedPnl)), labelled('Thay đổi vốn hôm nay (UTC)', fmt(t.dayChange)), labelled('Đồng bộ tài khoản', t.lastSync ? date(t.lastSync) : 'Chưa kết nối'));
+  $('trading-positions').replaceChildren(...(t.positions.length ? t.positions.map(p => el('p', `${p.instId} · ${Number(p.size) > 0 ? 'LONG' : 'SHORT'} · ${p.size} hợp đồng · vào ${fmt(Number(p.entry), 6)} · PnL ${fmt(Number(p.upl))} USDT`)) : [el('p', t.lastSync ? 'Không có vị thế mở.' : 'Chưa đọc được tài khoản.') ]));
+  $('trading-orders').replaceChildren(...(t.entries.length ? t.entries.map(o => el('p', `${date(o.createdAt)} · ${o.instId} · ${o.body.side.toUpperCase()} ${o.body.sz} hợp đồng · ${o.status}${o.fillPrice ? ' · khớp ' + o.fillPrice : ''} · SL ${o.body.attachAlgoOrds[0].slTriggerPx} / TP ${o.body.attachAlgoOrds[0].tpTriggerPx}`)) : [el('p', 'Chưa gửi lệnh. Bot chỉ vào khi xuất hiện tín hiệu mới; không ép mở lệnh.') ]));
+  $('trading-history').replaceChildren(...(t.fills.length ? t.fills.map(p => el('p', `${date(p.closedAt)} · ${p.instId} · PnL đã thực hiện ${fmt(Number(p.pnl))} USDT (gồm giao dịch khác nếu có)`)) : [el('p', 'Chưa có lịch sử vị thế đóng.') ]));
+}
 function renderSignals() {
   if (!last) return;
   const records = [...last.signals.map(s => ({ ...s, watch: false })), ...(last.candidates || []).map(s => ({ ...s, watch: true }))];
@@ -87,3 +101,4 @@ async function poll() {
   } finally { setTimeout(poll, 1000); }
 }
 poll();
+
