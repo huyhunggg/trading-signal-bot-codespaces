@@ -8,13 +8,15 @@ import { createHmac } from 'node:crypto';
 import { BinanceLiveApi } from '../src/binance-live-api.js';
 import { BinanceLiveTrader, liveOptions, liveLimits, planLiveOrder } from '../src/binance-live-trader.js';
 import { dashboard } from '../src/dashboard.js';
+import { defaultControls, validateControls } from '../src/live-controls.js';
+import { parseExitDraft } from '../ui/live-desk.js';
 
 const time = Date.UTC(2026, 10, 16, 2, 0, 10);
 const options = () => liveOptions({ BINANCE_API_KEY: 'FAKE_KEY_TEST_ONLY', BINANCE_API_SECRET: 'FAKE_SECRET_TEST_ONLY', BINANCE_LIVE_ENABLED: 'true' });
-const signal = (overrides = {}) => ({ id: 'binance:SOLUSDT:5m:123:CLOSED:LONG', symbol: 'SOLUSDT', exchange: 'binance', side: 'LONG', layer: 'CLOSED', closed: true,
+const signal = (overrides = {}) => ({ id: 'binance:ETHUSDT:5m:123:CLOSED:LONG', symbol: 'ETHUSDT', exchange: 'binance', side: 'LONG', layer: 'CLOSED', closed: true,
   candleEndTime: time - 10000, observedAt: time, receivedAt: time, referencePrice: 100, sl: 98, tp1: 101, ...overrides });
-const quote = { symbol: 'SOLUSDT', exchange: 'binance', bid: 99.99, ask: 100, price: 99.995, at: time };
-const spec = { symbol: 'SOLUSDT', status: 'TRADING', contractType: 'PERPETUAL', quoteAsset: 'USDT', marginAsset: 'USDT', filters: [
+const quote = { symbol: 'ETHUSDT', exchange: 'binance', bid: 99.99, ask: 100, price: 99.995, at: time };
+const spec = { symbol: 'ETHUSDT', status: 'TRADING', contractType: 'PERPETUAL', quoteAsset: 'USDT', marginAsset: 'USDT', filters: [
   { filterType: 'LOT_SIZE', minQty: '0.001', maxQty: '10000', stepSize: '0.001' },
   { filterType: 'MARKET_LOT_SIZE', minQty: '0.001', maxQty: '10000', stepSize: '0.001' },
   { filterType: 'PRICE_FILTER', tickSize: '0.01' }, { filterType: 'MIN_NOTIONAL', notional: '5' },
@@ -71,7 +73,7 @@ function setup(t, changes = {}) {
       if (endpoint.endsWith('/positionRisk')) return model.positions;
       if (endpoint.endsWith('/openOrders')) return model.foreignOrders;
       if (endpoint.endsWith('/openAlgoOrders')) return [...model.foreignAlgos, ...Object.values(model.algos).filter(a => a.algoStatus === 'NEW')];
-      if (endpoint.endsWith('/symbolConfig')) return [{ symbol: 'SOLUSDT', leverage: 1, marginType: 'ISOLATED' }];
+      if (endpoint.endsWith('/symbolConfig')) return [{ symbol: 'ETHUSDT', leverage: 1, marginType: 'ISOLATED' }];
       if (endpoint.endsWith('/algoOrder')) { if (!model.algos[params.clientAlgoId]) throw new Error('missing algo'); return model.algos[params.clientAlgoId]; }
       if (endpoint.endsWith('/order')) { if (!model.orders[params.origClientOrderId]) throw new Error('missing order'); return model.orders[params.origClientOrderId]; }
       throw new Error('Unexpected read ' + endpoint);
@@ -107,6 +109,7 @@ function setup(t, changes = {}) {
     },
   };
   const cfg = { dataDir }, trader = new BinanceLiveTrader(cfg, o, { api, now: () => time });
+  trader.resume();
   const market = { request: async () => ({ symbols: [spec] }), quote: async () => quote };
   t.after(() => { trader.stop(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   return { cfg, o, trader, api, calls, model, market };
@@ -179,4 +182,117 @@ test('live dashboard protects account status, assets and controls; public health
   assert.equal((await fetch(url + '/api/live/pause', { method: 'POST', headers: { 'content-type': 'application/json' } })).status, 401); assert.equal(paused, 0);
   assert.equal((await fetch(url + '/api/status', { headers })).status, 200);
   assert.equal((await fetch(url + '/api/live/pause', { method: 'POST', headers: { ...headers, 'content-type': 'application/json' } })).status, 200); assert.equal(paused, 1);
+});
+
+test('exit settings validate asset, modes, decimal commas and bounds without changing trading permission', () => {
+  assert.equal(defaultControls().symbol, 'ETHUSDT');
+  assert.equal(validateControls({ symbol: 'BTCUSDT', mode: 'percent', tpPercent: '1,5', slPercent: '0,75' }).slPercent, .75);
+  for (const input of [
+    { symbol: 'SOLUSDT', mode: 'strategy' }, { symbol: 'BTCUSDT', mode: 'unknown' },
+    { symbol: 'BTCUSDT', mode: 'percent', tpPercent: 0, slPercent: 1 },
+    { symbol: 'BTCUSDT', mode: 'percent', tpPercent: 21, slPercent: 1 },
+    { symbol: 'BTCUSDT', mode: 'price', tpPrice: 10, slPrice: 10 },
+    { symbol: 'BTCUSDT', mode: 'price', tpPrice: null, slPrice: 10 },
+    { symbol: 'BTCUSDT', mode: 'strategy', enabled: true },
+  ]) assert.throws(() => validateControls(input));
+  assert.deepEqual(parseExitDraft('percent', '1,5', '0,5'), { tpPercent: 1.5, slPercent: .5 });
+  assert.throws(() => parseExitDraft('price', '', '2000'));
+});
+
+test('custom percent exits mirror LONG/SHORT and fixed prices are enforced before any order', () => {
+  const settings = { ...defaultControls(), mode: 'percent', tpPercent: 2, slPercent: 1 };
+  const long = planLiveOrder(signal(), spec, quote, options(), 1000, time, settings);
+  const short = planLiveOrder(signal({ side: 'SHORT' }), spec, quote, options(), 1000, time, settings);
+  assert.equal(long.tp.triggerPrice, '102.00'); assert.equal(long.sl.triggerPrice, '99.00');
+  assert.ok(Number(short.tp.triggerPrice) < quote.bid); assert.ok(Number(short.sl.triggerPrice) > quote.bid);
+  const fixed = { ...settings, mode: 'price', tpPrice: 103, slPrice: 97 };
+  assert.equal(planLiveOrder(signal(), spec, quote, options(), 1000, time, fixed).tp.triggerPrice, '103.00');
+  assert.throws(() => planLiveOrder(signal({ side: 'SHORT' }), spec, quote, options(), 1000, time, fixed), /PRICE_PAST/);
+  const bounded = { ...spec, filters: spec.filters.map(f => f.filterType === 'PRICE_FILTER' ? { ...f, minPrice: '1', maxPrice: '200' } : f) };
+  assert.throws(() => planLiveOrder(signal(), bounded, quote, options(), 1000, time, { ...fixed, tpPrice: 300 }), /PRICE_FILTER/);
+});
+
+test('saved controls and pause survive restart, and only the selected asset can queue entries', async t => {
+  const { trader, cfg, o, api, market } = setup(t);
+  trader.pause(); trader.setControls({ symbol: 'BTCUSDT', mode: 'percent', tpPercent: 1.5, slPercent: .5, expectedRevision: 0 });
+  trader.stop(); const restarted = new BinanceLiveTrader(cfg, o, { api, now: () => time });
+  try {
+    assert.equal(restarted.state.paused, true); assert.equal(restarted.state.controls.symbol, 'BTCUSDT');
+    assert.equal(restarted.state.controls.tpPercent, 1.5);
+    restarted.resume(); await restarted.tick(market); restarted.enqueue(signal()); assert.equal(restarted.pending, null);
+    restarted.enqueue(signal({ id: 'btc-new', symbol: 'BTCUSDT' })); assert.equal(restarted.pending.symbol, 'BTCUSDT');
+  } finally { restarted.stop(); }
+});
+
+test('changing controls invalidates pending and in-flight signals before they can place an entry', async t => {
+  const { trader, market, calls } = setup(t); await trader.tick(market); trader.enqueue(signal());
+  trader.setControls({ symbol: 'ETHUSDT', mode: 'percent', tpPercent: 2, slPercent: 1, expectedRevision: 0 });
+  assert.equal(trader.pending, null); await trader.tick(market); assert.equal(entries(calls).length, 0);
+  trader.enqueue(signal());
+  market.quote = async () => { trader.setControls({ symbol: 'BTCUSDT', mode: 'strategy', expectedRevision: 1 }); return quote; };
+  await trader.tick(market); assert.equal(entries(calls).length, 0);
+});
+
+test('pause/resume while an entry is in flight cannot revive the old signal', async t => {
+  const { trader, market, api, calls } = setup(t); await trader.tick(market); trader.enqueue(signal());
+  const post = api.post.bind(api);
+  api.post = async (endpoint, body) => {
+    if (endpoint.endsWith('/leverage')) { trader.pause(); trader.resume(); }
+    return post(endpoint, body);
+  };
+  await trader.tick(market); assert.equal(entries(calls).length, 0);
+});
+
+test('new UI settings never amend the SL/TP or symbol of an existing protected position', async t => {
+  const { trader, market, model } = setup(t); await trader.tick(market); trader.enqueue(signal()); await trader.tick(market);
+  const original = JSON.stringify(trader.state.entries[0].plan), algos = JSON.stringify(model.algos);
+  trader.setControls({ symbol: 'BTCUSDT', mode: 'price', tpPrice: 70000, slPrice: 60000, expectedRevision: 0 });
+  await trader.tick(market);
+  assert.equal(JSON.stringify(trader.state.entries[0].plan), original); assert.equal(JSON.stringify(model.algos), algos);
+});
+
+test('settings revisions reject stale tabs, and failed disk writes cannot activate or change configuration', t => {
+  const { trader } = setup(t);
+  trader.setControls({ symbol: 'BTCUSDT', mode: 'strategy', expectedRevision: 0 });
+  assert.throws(() => trader.setControls({ symbol: 'ETHUSDT', mode: 'strategy', expectedRevision: 0 }), e => e.status === 409);
+  trader.pause(); const before = JSON.stringify(trader.state.controls);
+  trader.save = () => { throw new Error('disk full'); };
+  assert.throws(() => trader.resume(), /disk full/); assert.equal(trader.state.paused, true);
+  assert.throws(() => trader.setControls({ symbol: 'ETHUSDT', mode: 'strategy', expectedRevision: 1 }), /disk full/);
+  assert.equal(JSON.stringify(trader.state.controls), before);
+});
+
+test('UI on/off cannot bypass environment enable gate or persistent halt', t => {
+  const { trader } = setup(t); trader.pause(); trader.options.enabled = false;
+  assert.throws(() => trader.resume(), e => e.status === 409); assert.equal(trader.state.paused, true);
+  trader.options.enabled = true; trader.halt('unresolved entry');
+  assert.throws(() => trader.resume(), e => e.status === 409); assert.equal(trader.state.halt, 'unresolved entry');
+});
+
+test('legacy journals migrate paused without changing pending orders, and settings save needs no exchange calls', async t => {
+  const { trader, cfg, o, api, market, calls } = setup(t); await trader.tick(market); trader.enqueue(signal()); await trader.tick(market);
+  trader.stop(); const old = JSON.parse(fs.readFileSync(trader.file)); delete old.controls; old.paused = false; fs.writeFileSync(trader.file, JSON.stringify(old));
+  const next = new BinanceLiveTrader(cfg, o, { api, now: () => time });
+  try {
+    assert.equal(next.state.paused, true); assert.equal(next.state.entries[0].status, 'PROTECTED');
+    const count = calls.length;
+    next.setControls({ symbol: 'ETHUSDT', mode: 'price', tpPrice: 105, slPrice: 95, expectedRevision: 0 });
+    assert.equal(calls.length, count); assert.equal(next.state.entries[0].plan.sl.triggerPrice, '98.00');
+  } finally { next.stop(); }
+});
+
+test('authenticated settings HTTP endpoint validates bounded JSON, exposes field errors, and persists configuration', async t => {
+  const { trader } = setup(t); const password = 'testpass';
+  const server = dashboard({ host: '127.0.0.1', dashboardPassword: password }, () => ({ trading: trader.snapshot() }), { '/api/live/settings': data => trader.setControls(data) });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/api/live/settings`;
+  const headers = { authorization: 'Basic ' + Buffer.from('bot:' + password).toString('base64'), 'content-type': 'application/json' };
+  const payload = { symbol: 'ETHUSDT', mode: 'percent', tpPercent: '1,5', slPercent: '0,5', expectedRevision: 0 };
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+  assert.equal(response.status, 200); assert.equal((await response.json()).trading.controls.tpPercent, 1.5);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) })).status, 409);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: '{' })).status, 400);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: 'x'.repeat(5000) })).status, 413);
+  assert.equal((await fetch(url, { method: 'POST', headers: { ...headers, origin: 'https://other.example' }, body: JSON.stringify(payload) })).status, 403);
+  assert.equal((await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })).status, 401);
 });

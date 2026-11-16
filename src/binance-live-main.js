@@ -6,18 +6,18 @@ import { SourceManager } from './source-manager.js';
 import { runLiveSession } from './live-session.js';
 import { BinanceLiveTrader, liveOptions } from './binance-live-trader.js';
 
-const cfg = loadConfig({ HOST: process.env.HOST, PORT: process.env.PORT, EXCHANGE: 'binance', DATA_SOURCE_MODE: 'fixed' });
+const cfg = loadConfig({ HOST: process.env.HOST, PORT: process.env.PORT, EXCHANGE: 'binance', DATA_SOURCE_MODE: 'fixed', SYMBOLS: 'BTCUSDT,ETHUSDT' });
 cfg.dataDir = process.env.LIVE_DATA_DIR || './live-data';
 cfg.dashboardUser = process.env.DASHBOARD_USER || 'bot'; cfg.dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
 if (cfg.dashboardPassword.length < 8) throw new Error('Set DASHBOARD_PASSWORD to at least 8 characters before starting real-account mode');
 const trader = new BinanceLiveTrader(cfg, liveOptions()), sources = new SourceManager(cfg), abort = new AbortController();
 let engine, market = null, stopped = false, status = { phase: 'SELECTING', error: null };
 const server = dashboard(cfg, () => ({
-  version: 'binance-live-1', demo: false, exchange: 'binance', sourceMode: 'fixed', sources: sources.snapshot(),
+  version: 'binance-live-2', demo: false, exchange: 'binance', sourceMode: 'fixed', sources: sources.snapshot(),
   symbols: cfg.symbols, timeframes: cfg.timeframes, htf: cfg.htf, pinbarEnabled: cfg.pinbarEnabled,
   serverNow: Date.now(), streamStaleMs: cfg.streamStaleMs, rows: [...(engine?.rows.values() || [])],
   status, signals: [], candidates: [], trading: trader.snapshot(), validation: null, calibrationJob: { phase: 'DISABLED' }, telegram: { configured: false },
-}), { '/api/live/pause': () => trader.pause(), '/api/live/resume': () => trader.resume() });
+}), { '/api/live/pause': () => trader.pause(), '/api/live/resume': () => trader.resume(), '/api/live/settings': data => trader.setControls(data) });
 server.on('error', e => { console.error(`Dashboard: ${e.code || 'failed'}`); stop(); process.exitCode = 1; });
 server.listen(cfg.port, cfg.host, () => console.log(`BINANCE REAL ACCOUNT · orders ${trader.options.enabled ? 'ENABLED' : 'DISABLED'} · dashboard login required · /healthz`));
 const tradingTimer = setInterval(() => { void trader.tick(status.phase === 'STREAMING' ? market : null); }, 5000);

@@ -4,6 +4,22 @@
 
 Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.
 
+### Bảng điều khiển BTC/ETH và TP/CL
+
+Giao diện mới có hai phần: **Cấu hình lệnh mới** và **Điều khiển bot**. Chọn một cặp **BTC/USDT** hoặc **ETH/USDT**, chọn cách đặt chốt lời/cắt lỗ, rồi bấm **Lưu cấu hình**:
+
+- **Theo tín hiệu chiến lược**: giữ cách tính TP1/SL từ ATR như trước.
+- **Theo phần trăm giá vào**: nhập TP và CL, ví dụ TP 1,5%, CL 0,75%. Bot tính mức giá từ bid/ask vào lệnh dự kiến; LONG chốt phía trên/cắt phía dưới, SHORT đảo chiều. Giới hạn nhập TP 0,05–20%, CL 0,05–10%.
+- **Nhập mức giá USDT**: nhập giá TP và CL cố định. LONG cần TP > giá vào > CL; SHORT cần CL > giá vào > TP. Nếu tín hiệu không phù hợp phía giá hoặc mức giá vượt filter của Binance, bot bỏ qua trước khi đặt entry. Khi đổi cặp ở chế độ này, giao diện xóa hai ô để tránh dùng nhầm mức giá BTC cho ETH.
+
+**Chỉ áp dụng cho lệnh mới.** Thay đổi cặp/TP/CL không sửa hoặc hủy SL/TP của vị thế hiện có. Bot chỉ nhận tín hiệu của cặp đã lưu; khối lượng vẫn tính theo ngân sách vốn/rủi ro. Không có lệnh mua/bán thủ công ngay khi bấm Lưu hoặc Bật.
+
+**Bật giao dịch** cho phép chờ tín hiệu mới, **Tắt giao dịch** ngăn mở thêm. SL/TP và đối chiếu vị thế đã mở tiếp tục hoạt động khi tắt. Yêu cầu entry đã gửi trước lúc tắt có thể vẫn khớp. Nút Bật cần quyền server `BINANCE_LIVE_ENABLED=true` và không được xóa khóa HALTED hoặc bỏ qua thời gian khóa IP/rate limit. Có thể lưu cấu hình ngay cả khi API Binance bị khóa, vì thao tác lưu chỉ ghi vào journal cục bộ.
+
+Khi nâng từ bản chưa có bảng điều khiển này, bot khởi tạo lựa chọn **ETH/USDT**, TP/CL **theo chiến lược**, và **tắt mở thêm lệnh**. Kiểm tra cấu hình rồi tự bật trên trang khi muốn. Sau đó cặp, TP/CL và trạng thái bật/tắt được giữ trong `binance-live.json`; cần Persistent Disk để giữ qua redeploy trên Render. Không di chuyển/xóa file backoff để bỏ qua lệnh chờ của Binance.
+
+Form giữ nguyên dữ liệu đang nhập khi polling; phải lưu/hủy thay đổi trước khi bật. Hai tab lưu chồng nhau sẽ nhận thông báo xung đột, không tự ghi đè bản mới. Hủy thay đổi tải lại cấu hình đang áp dụng. Thay đổi cặp/TP/CL hoặc tắt/bật trong lúc đang xử lý tín hiệu sẽ vô hiệu hóa tín hiệu cũ trước khi gửi entry; không phát lại tín hiệu cũ sau thao tác.
+
 ### Thiết lập Render
 
 1. Dùng nhánh **`codex/okx-demo-autotrade`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.

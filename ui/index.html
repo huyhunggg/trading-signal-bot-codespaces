@@ -19,9 +19,34 @@
       <div class="sectiontitle"><h2 id="trading-title">OKX DEMO · Tự động giao dịch bằng tiền ảo</h2><strong id="trading-status">Đang kiểm tra…</strong></div>
       <div id="paper-controls" class="paper-controls" hidden><button id="paper-pause" type="button">Tạm dừng mở lệnh</button><button id="paper-resume" type="button">Tiếp tục</button><button id="paper-reset" type="button">Bắt đầu lại · 10.000 USDT ảo</button><span id="paper-action-result" role="status"></span></div>
       <div id="live-controls" class="paper-controls" hidden><button id="live-pause" type="button">Dừng mở lệnh thật</button><button id="live-resume" type="button">Tiếp tục mở lệnh thật</button><span id="live-action-result" role="status"></span></div>
+      <div id="live-desk" class="live-desk" hidden>
+        <form id="live-settings-form" class="desk-settings" novalidate>
+          <div class="desk-section-head"><div><span class="desk-kicker">01 / CẤU HÌNH LỆNH MỚI</span><h3>Chọn cách bạn giao dịch</h3></div><span id="live-draft-badge" class="desk-badge">Đã lưu</span></div>
+          <fieldset class="asset-selector"><legend>Cặp giao dịch</legend>
+            <label class="asset-option"><input type="radio" id="live-asset-btc" name="liveAsset" value="BTCUSDT"><span class="coin-icon btc">₿</span><span><strong>Bitcoin</strong><small>BTC / USDT</small></span><span class="asset-check" aria-hidden="true">✓</span></label>
+            <label class="asset-option"><input type="radio" id="live-asset-eth" name="liveAsset" value="ETHUSDT"><span class="coin-icon eth">◇</span><span><strong>Ethereum</strong><small>ETH / USDT</small></span><span class="asset-check" aria-hidden="true">✓</span></label>
+          </fieldset>
+          <label class="desk-field" for="live-exit-mode"><span>Chốt lời &amp; cắt lỗ</span><select id="live-exit-mode"><option value="strategy">Theo tín hiệu chiến lược</option><option value="percent">Theo phần trăm giá vào</option><option value="price">Nhập mức giá USDT</option></select></label>
+          <div id="live-exit-fields" class="exit-fields" hidden>
+            <label class="desk-field" for="live-tp"><span><i class="field-dot profit"></i>Chốt lời · TP <small id="live-tp-unit">%</small></span><input id="live-tp" inputmode="decimal" type="text" autocomplete="off" placeholder="1"><small id="live-tp-error" class="field-error"></small></label>
+            <label class="desk-field" for="live-sl"><span><i class="field-dot loss"></i>Cắt lỗ · CL <small id="live-sl-unit">%</small></span><input id="live-sl" inputmode="decimal" type="text" autocomplete="off" placeholder="0,5"><small id="live-sl-error" class="field-error"></small></label>
+          </div>
+          <p id="live-exit-preview" class="desk-preview"></p>
+          <div class="desk-save-row"><button id="live-settings-save" class="desk-primary" type="submit">Lưu cấu hình</button><button id="live-settings-reload" class="desk-secondary" type="button">Hủy thay đổi</button><span id="live-settings-message" role="status" aria-live="polite">Áp dụng cho lệnh mới.</span></div>
+          <p class="desk-footnote">Đổi cặp hoặc TP/CL không sửa vị thế đã mở. Bot vẫn tự chọn LONG/SHORT khi đủ tín hiệu.</p>
+        </form>
+        <aside class="desk-runtime">
+          <div><span class="desk-kicker">02 / ĐIỀU KHIỂN BOT</span><h3>Trạng thái giao dịch</h3></div>
+          <div class="desk-power"><div><strong id="live-power-label">Đang kiểm tra</strong><span id="live-power-description">Đang đọc cấu hình.</span></div><span id="live-power-icon" class="power-icon" aria-hidden="true">⏻</span></div>
+          <div id="live-toggle-buttons" class="desk-toggle-buttons"></div>
+          <p id="live-power-hint" class="desk-footnote"></p>
+          <div id="live-connection-card" class="desk-connection" role="status"><span class="desk-kicker">KẾT NỐI BINANCE</span><strong id="live-connection-title">Đang kiểm tra</strong><p id="live-connection-detail"></p><span id="live-retry-countdown"></span></div>
+          <div class="desk-saved"><small>CẤU HÌNH ĐANG ÁP DỤNG</small><strong id="live-saved-symbol">—</strong><span id="live-saved-exits">—</span></div>
+        </aside>
+      </div>
       <p id="trading-reason" role="status"></p>
       <p id="trading-limits"></p>
-      <p id="trading-policy" class="trading-warning">Thử nghiệm: dùng tín hiệu đóng nến mới, không yêu cầu bộ lọc lịch sử 80%. Chốt toàn bộ tại TP1 hoặc SL; chưa chốt từng phần/dời SL. Không phải chiến lược đã được chứng minh.</p>
+      <details id="trading-risk-details" class="trading-risk-details" open><summary>Cách hoạt động và lưu ý giao dịch</summary><p id="trading-policy" class="trading-warning">Thử nghiệm: dùng tín hiệu đóng nến mới, không yêu cầu bộ lọc lịch sử 80%. Chốt toàn bộ tại TP1 hoặc SL; chưa chốt từng phần/dời SL. Không phải chiến lược đã được chứng minh.</p></details>
       <div id="trading-account" class="trading-account"></div>
       <h3>Vị thế đang mở</h3><div id="trading-positions"></div>
       <h3 id="trading-orders-title">Lệnh bot đã gửi</h3><div id="trading-orders"></div>

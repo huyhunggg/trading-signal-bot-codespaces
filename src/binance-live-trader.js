@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { BinanceLiveApi } from './binance-live-api.js';
 import { quantize } from './okx-demo-trader.js';
+import { defaultControls, validateControls, exitLevels, controlError } from './live-controls.js';
 
 export function liveOptions(env = process.env) {
   const number = (name, fallback, max) => {
@@ -17,7 +18,7 @@ export function liveOptions(env = process.env) {
 export function liveLimits(options, equity) {
   return { notional: Math.min(options.maxNotional, equity * 0.05), risk: Math.min(options.maxRisk, equity * 0.0025), daily: Math.min(options.maxDailyLoss, equity * 0.01) };
 }
-export function planLiveOrder(signal, spec, quote, options, equity, now) {
+export function planLiveOrder(signal, spec, quote, options, equity, now, controls) {
   if (signal.exchange !== 'binance' || signal.layer !== 'CLOSED' || !signal.closed || !['LONG', 'SHORT'].includes(signal.side) ||
       !Number.isFinite(signal.candleEndTime) || now - signal.candleEndTime > 60000 || signal.candleEndTime > now ||
       !Number.isFinite(quote.at) || now - quote.at > 5000 || quote.at > now + 1000 || quote.exchange !== 'binance' || quote.symbol !== signal.symbol ||
@@ -28,7 +29,11 @@ export function planLiveOrder(signal, spec, quote, options, equity, now) {
   if (!lot || !normal || !priceFilter || !filters.MIN_NOTIONAL) throw new Error('MISSING_EXCHANGE_FILTERS');
   const long = signal.side === 'LONG', price = long ? quote.ask : quote.bid;
   if (!(signal.referencePrice > 0) || Math.abs(price / signal.referencePrice - 1) > 0.003 || (quote.ask - quote.bid) / price > 0.001) throw new Error('PRICE_MOVED_OR_SPREAD');
-  const sl = quantize(signal.sl, priceFilter.tickSize, long), tp = quantize(signal.tp1, priceFilter.tickSize, !long);
+  const levels = exitLevels(signal, price, controls);
+  const sl = quantize(levels.sl, priceFilter.tickSize, long), tp = quantize(levels.tp, priceFilter.tickSize, !long);
+  if ([sl, tp].some(value => !/^\d+(\.\d+)?$/.test(value) ||
+      (Number(priceFilter.minPrice) > 0 && Number(value) < Number(priceFilter.minPrice)) ||
+      (Number(priceFilter.maxPrice) > 0 && Number(value) > Number(priceFilter.maxPrice)))) throw new Error('EXIT_OUTSIDE_PRICE_FILTER');
   if (!(long ? Number(sl) < price && price < Number(tp) : Number(tp) < price && price < Number(sl))) throw new Error('PRICE_PAST_STOP_TARGET');
   const limits = liveLimits(options, equity), riskUnit = Math.abs(price - Number(sl)) + price * 0.003;
   const step = Number(lot.stepSize) > 0 ? lot.stepSize : normal.stepSize;
@@ -51,6 +56,12 @@ export class BinanceLiveTrader {
     this.file = path.join(cfg.dataDir, 'binance-live.json');
     this.state = fs.existsSync(this.file) ? JSON.parse(fs.readFileSync(this.file, 'utf8')) : { version: 1, entries: [], day: null, baseline: null, halt: null, paused: false };
     if (this.state.version !== 1 || !Array.isArray(this.state.entries)) throw new Error('Invalid live journal; do not delete it to bypass a halt');
+    if (!this.state.controls) { this.state.controls = defaultControls(); this.state.paused = true; }
+    else {
+      const revision = this.state.controls.revision;
+      if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Invalid saved control revision');
+      this.state.controls = { ...validateControls(this.state.controls), revision };
+    }
     const identity = options.key ? createHash('sha256').update(options.key).digest('hex') : null;
     if (identity && this.state.identity && this.state.identity !== identity) throw new Error('API key changed: reconcile the journal before using another key');
     if (identity) this.state.identity = identity;
@@ -60,21 +71,35 @@ export class BinanceLiveTrader {
     try { this.lockDb.exec('BEGIN IMMEDIATE'); }
     catch { this.lockDb.close(); throw new Error('A live trader is already using this journal'); }
     this.busy = false; this.stopped = false; this.pending = null; this.positions = []; this.equity = null; this.available = null;
+    this.intentVersion = 0;
     this.status = 'STARTING'; this.reason = 'Đang kiểm tra tài khoản Binance Futures thật.'; this.lastSync = null;
     this.save();
   }
-  save() { fs.writeFileSync(this.file + '.tmp', JSON.stringify(this.state), { mode: 0o600 }); fs.renameSync(this.file + '.tmp', this.file); }
+  save(state = this.state) { fs.writeFileSync(this.file + '.tmp', JSON.stringify(state), { mode: 0o600 }); fs.renameSync(this.file + '.tmp', this.file); }
   releaseLock() { if (this.lockDb) { this.lockDb.close(); this.lockDb = null; } }
   stop() { this.stopped = true; this.pending = null; if (!this.busy) this.releaseLock(); }
-  pause() { this.pending = null; this.state.paused = true; this.save(); }
-  resume() { this.state.paused = false; this.save(); }
+  pause() { this.intentVersion++; this.pending = null; this.state.paused = true; this.save(); }
+  resume() {
+    if (!this.options.enabled) throw controlError('Cần đặt BINANCE_LIVE_ENABLED=true trong Render trước khi bật trên giao diện.', 409);
+    if (this.state.halt) throw controlError('Bot đang khóa vì lỗi. Kiểm tra Binance; nút Bật không xóa khóa này.', 409);
+    this.save({ ...this.state, paused: false });
+    this.intentVersion++; this.pending = null; this.state.paused = false;
+  }
+  setControls(input) {
+    if (!Number.isSafeInteger(input?.expectedRevision) || input.expectedRevision !== this.state.controls.revision) throw controlError('Cấu hình đã thay đổi ở phiên khác. Tải cấu hình mới rồi lưu lại.', 409);
+    const controls = { ...validateControls(input), revision: this.state.controls.revision + 1 };
+    this.save({ ...this.state, controls });
+    this.state.controls = controls; this.intentVersion++; this.pending = null;
+  }
   halt(reason) { this.pending = null; this.state.halt = reason; this.save(); this.status = 'HALTED'; this.reason = reason; }
   enqueue(signal) {
     if (this.status === 'READY' && !this.state.paused && !this.state.halt && !this.pending && signal.layer === 'CLOSED' && signal.exchange === 'binance' &&
-        !this.state.entries.some(e => e.signalId === signal.id)) this.pending = { ...signal, receivedAt: this.now() };
+        signal.symbol === this.state.controls.symbol && !this.state.entries.some(e => e.signalId === signal.id)) this.pending = { ...signal, receivedAt: this.now(), controlsRevision: this.state.controls.revision, intentVersion: this.intentVersion };
   }
   snapshot() {
     return { mode: 'BINANCE_LIVE', status: this.status, reason: this.reason, enabled: this.options.enabled, paused: this.state.paused,
+      controls: { ...this.state.controls }, halted: !!this.state.halt,
+      accountRetryAt: this.api.retryAt || null,
       configured: !!this.options.key && !!this.options.secret, equity: this.equity, available: this.available, lastSync: this.lastSync,
       limits: this.equity ? liveLimits(this.options, this.equity) : null,
       unrealizedPnl: this.positions.reduce((sum, p) => sum + Number(p.unRealizedProfit || 0), 0),
@@ -173,12 +198,14 @@ export class BinanceLiveTrader {
       if (!market) { this.status = 'WAITING_DATA'; this.reason = 'Chờ nguồn Binance kết nối để nhận tín hiệu mới.'; return; }
       this.status = 'READY'; this.reason = 'Giao dịch thật đã bật. Chờ tín hiệu đóng nến mới và báo giá hợp lệ.';
       const signal = this.pending; this.pending = null;
-      if (!signal || this.state.entries.some(e => e.signalId === signal.id)) return;
+      if (!signal || signal.intentVersion !== this.intentVersion || signal.symbol !== this.state.controls.symbol || signal.controlsRevision !== this.state.controls.revision || this.state.entries.some(e => e.signalId === signal.id)) return;
       const info = await market.request('https://fapi.binance.com/fapi/v1/exchangeInfo');
       const quote = await market.quote(signal.symbol);
       if (quote.at < signal.receivedAt) { this.reason = 'Bỏ qua: chưa có báo giá mới sau tín hiệu.'; return; }
+      if (signal.intentVersion !== this.intentVersion || signal.controlsRevision !== this.state.controls.revision) return;
       let plan;
-      try { plan = planLiveOrder(signal, info.symbols?.find(s => s.symbol === signal.symbol), quote, this.options, this.equity, this.now()); }
+      const settings = { ...this.state.controls };
+      try { plan = planLiveOrder(signal, info.symbols?.find(s => s.symbol === signal.symbol), quote, this.options, this.equity, this.now(), settings); }
       catch (e) { this.reason = e.message === 'BELOW_BINANCE_MINIMUM' ? 'Bỏ qua: khối lượng theo giới hạn vốn thấp hơn mức tối thiểu Binance.' : 'Bỏ qua: tín hiệu, spread, giá hoặc quy tắc khối lượng không còn hợp lệ.'; return; }
       if (this.available < Number(plan.entry.quantity) * quote.ask * 1.01) { this.reason = 'USDT khả dụng không đủ dự phòng.'; return; }
       try { await this.api.post('/fapi/v1/marginType', { symbol: signal.symbol, marginType: 'ISOLATED' }); }
@@ -186,8 +213,8 @@ export class BinanceLiveTrader {
       const leverage = await this.api.post('/fapi/v1/leverage', { symbol: signal.symbol, leverage: '1' });
       const [config] = await this.api.get('/fapi/v1/symbolConfig', { symbol: signal.symbol });
       if (leverage.leverage !== 1 || Number(config?.leverage) !== 1 || config.marginType !== 'ISOLATED') throw new Error('ISOLATED_1X_NOT_CONFIRMED');
-      if (this.stopped || this.state.paused || this.now() - quote.at > 5000 || this.now() - signal.candleEndTime > 60000) return;
-      const entry = { signalId: signal.id, plan, status: 'ENTRY_UNKNOWN', createdAt: this.now() };
+      if (this.stopped || this.state.paused || signal.intentVersion !== this.intentVersion || settings.revision !== this.state.controls.revision || this.now() - quote.at > 5000 || this.now() - signal.candleEndTime > 60000) return;
+      const entry = { signalId: signal.id, plan, controls: settings, status: 'ENTRY_UNKNOWN', createdAt: this.now() };
       this.state.entries.push(entry); this.save();
       try {
         const ack = await this.api.post('/fapi/v1/order', plan.entry);
