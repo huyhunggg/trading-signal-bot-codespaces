@@ -9,8 +9,15 @@ import { dashboard } from './dashboard.js';
 import { runDemo } from './demo.js';
 import { ValidationGate, REASONS } from './validation.js';
 import { CalibrationJob } from './calibration-job.js';
+import { OkxDemoTrader, demoOptions } from './okx-demo-trader.js';
 
 const cfg = loadConfig(), demo = process.argv.includes('--demo'), check = process.argv.includes('--check');
+const okxDemo = process.argv.includes('--okx-demo');
+if (okxDemo && (demo || check)) throw new Error('Run --okx-demo separately from --demo / --check');
+if (okxDemo) {
+  cfg.exchange = 'okx'; cfg.sourceMode = 'fixed'; cfg.sourceOrder = ['okx'];
+  cfg.telegramToken = ''; cfg.telegramChatId = ''; cfg.validation.autoCalibrate = false;
+}
 if (demo) { cfg.telegramToken = ''; cfg.telegramChatId = ''; cfg.dataDir = './demo-data'; }
 const sources = new SourceManager(cfg);
 
@@ -26,11 +33,14 @@ if (check) {
   } catch (e) { console.error(e.message); process.exitCode = 1; }
 } else {
   const store = new Store(cfg), gate = new ValidationGate(cfg), calibrationJob = new CalibrationJob(cfg), shutdown = new AbortController();
+  const trader = okxDemo ? new OkxDemoTrader(cfg, demoOptions()) : null;
   let engine, offset = 0, stopped = false, status = { phase: demo ? 'DEMO' : 'SELECTING', error: null, reconnects: 0, connectedAt: null };
   let demoNow = Math.floor(Date.now() / 86_400_000) * 86_400_000 + 12 * 3_600_000;
   const now = () => demo ? demoNow + 1000 : Date.now() + offset;
   const signal = value => {
     if (!demo && !store.reserveCandidate(value)) return;
+    // Dedicated experimental demo route. Historical notification rules remain separate.
+    trader?.enqueue(value);
     value.validation = demo ? { eligible: false, status: 'DEMO', reason: REASONS.DEMO, winRate: null } : gate.assess(value, now());
     if (!demo && !value.validation.eligible) { store.recordCandidate(value); return; }
     if (store.accept(value)) console.log(`${demo ? '[MÔ PHỎNG] ' : ''}${value.layer} ${value.side} ${value.symbol} ${value.timeframe} @ ${value.referencePrice} (${value.branch})`);
@@ -38,6 +48,7 @@ if (check) {
   const server = dashboard(cfg, () => ({
     version: packageJson.version, sourceMode: cfg.sourceMode, sources: sources.snapshot(),
     demo, exchange: cfg.exchange, symbols: cfg.symbols, timeframes: cfg.timeframes, htf: cfg.htf,
+    trading: trader?.snapshot() || null,
     pinbarEnabled: cfg.pinbarEnabled, serverNow: now(), streamStaleMs: cfg.streamStaleMs,
     status, rows: [...(engine?.rows.values() || [])], signals: store.state.recent,
     candidates: store.state.watchlist,
@@ -56,9 +67,11 @@ if (check) {
     s => !demo && s.validation?.eligible === true && gate.assess(s, now()).eligible
   ).catch(() => console.error('Không lưu được trạng thái gửi tin; kiểm tra ổ đĩa.')), 1000);
   const calibrationTimer = setInterval(() => calibrationJob.tick(gate, { streaming: status.phase === 'STREAMING', demo, now: now() }), 60_000);
+  const tradingTimer = trader ? setInterval(() => trader.tick(), 5000) : null;
+  if (trader) { console.log('OKX DEMO AUTOTRADE · isolated 1x · full TP1/SL · no live trading'); void trader.tick(); }
   function stop() {
     if (stopped) return;
-    stopped = true; shutdown.abort(); calibrationJob.stop(); clearInterval(deliveryTimer); clearInterval(calibrationTimer); server.close(); store.save();
+    stopped = true; shutdown.abort(); calibrationJob.stop(); trader?.stop(); clearInterval(tradingTimer); clearInterval(deliveryTimer); clearInterval(calibrationTimer); server.close(); store.save();
   }
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   if (!cfg.telegramToken && !demo) console.log('Telegram chưa cấu hình: tín hiệu vẫn được lưu và hiển thị cục bộ.');
@@ -99,3 +112,4 @@ if (check) {
     }
   }
 }
+

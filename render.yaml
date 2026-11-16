@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: binance-trading-bot
+    runtime: docker
+    plan: starter
+    branch: codex/okx-demo-autotrade
+    healthCheckPath: /healthz
+    numInstances: 1
+    disk:
+      name: live-journal
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: BOT_MODE
+        value: binance-live
+      - key: HOST
+        value: 0.0.0.0
+      - key: LIVE_DATA_DIR
+        value: /var/data/binance-live
+      - key: BINANCE_LIVE_ENABLED
+        value: "false"
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: DASHBOARD_USER
+        value: bot
+      - key: DASHBOARD_PASSWORD
+        generateValue: true

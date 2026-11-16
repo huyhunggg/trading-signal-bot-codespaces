@@ -8,8 +8,15 @@
     "node": ">=24.5.0"
   },
   "scripts": {
+    "trade:binance": "node --use-env-proxy --env-file-if-exists=.env src/binance-live-main.js",
+    "okx:demo:setup": "node scripts/setup-okx-demo.js",
+    "okx:demo": "node --use-env-proxy --env-file-if-exists=.env --env-file-if-exists=.env.okx-demo src/main.js --okx-demo",
+    "okx:demo:pause": "node --env-file-if-exists=.env scripts/okx-demo-control.js pause",
+    "okx:demo:resume": "node --env-file-if-exists=.env scripts/okx-demo-control.js resume",
     "start": "node --use-env-proxy --env-file-if-exists=.env src/main.js",
-    "demo": "node --use-env-proxy --env-file-if-exists=.env src/main.js --demo",
+    "demo": "node src/paper-main.js",
+    "paper": "node --use-env-proxy src/paper-main.js --live",
+    "paper:binance": "node --use-env-proxy src/paper-main.js --live --binance",
     "check": "node --use-env-proxy --env-file-if-exists=.env src/main.js --check",
     "test": "node --test",
     "calibrate": "node --use-env-proxy --env-file-if-exists=.env scripts/calibrate.js",
@@ -21,3 +28,4 @@
     "ws": "^8.18.3"
   }
 }
+

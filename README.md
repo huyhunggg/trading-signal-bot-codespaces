@@ -1,4 +1,180 @@
-# Confluence — bot cảnh báo crypto LONG/SHORT
+# Confluence — tín hiệu crypto, mô phỏng và Binance Futures thật
+
+## Binance Futures tiền thật trên Render
+
+Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.
+
+### Bảng điều khiển BTC/ETH và TP/CL
+
+Giao diện mới có hai phần: **Cấu hình lệnh mới** và **Điều khiển bot**. Chọn một cặp **BTC/USDT** hoặc **ETH/USDT**, chọn cách đặt chốt lời/cắt lỗ, rồi bấm **Lưu cấu hình**:
+
+- **Theo tín hiệu chiến lược**: giữ cách tính TP1/SL từ ATR như trước.
+- **Theo phần trăm giá vào**: nhập TP và CL, ví dụ TP 1,5%, CL 0,75%. Bot tính mức giá từ bid/ask vào lệnh dự kiến; LONG chốt phía trên/cắt phía dưới, SHORT đảo chiều. Giới hạn nhập TP 0,05–20%, CL 0,05–10%.
+- **Nhập mức giá USDT**: nhập giá TP và CL cố định. LONG cần TP > giá vào > CL; SHORT cần CL > giá vào > TP. Nếu tín hiệu không phù hợp phía giá hoặc mức giá vượt filter của Binance, bot bỏ qua trước khi đặt entry. Khi đổi cặp ở chế độ này, giao diện xóa hai ô để tránh dùng nhầm mức giá BTC cho ETH.
+
+**Chỉ áp dụng cho lệnh mới.** Thay đổi cặp/TP/CL không sửa hoặc hủy SL/TP của vị thế hiện có. Bot chỉ nhận tín hiệu của cặp đã lưu; khối lượng vẫn tính theo ngân sách vốn/rủi ro. Không có lệnh mua/bán thủ công ngay khi bấm Lưu hoặc Bật.
+
+**Bật giao dịch** cho phép chờ tín hiệu mới, **Tắt giao dịch** ngăn mở thêm. SL/TP và đối chiếu vị thế đã mở tiếp tục hoạt động khi tắt. Yêu cầu entry đã gửi trước lúc tắt có thể vẫn khớp. Nút Bật cần quyền server `BINANCE_LIVE_ENABLED=true` và không được xóa khóa HALTED hoặc bỏ qua thời gian khóa IP/rate limit. Có thể lưu cấu hình ngay cả khi API Binance bị khóa, vì thao tác lưu chỉ ghi vào journal cục bộ.
+
+Khi nâng từ bản chưa có bảng điều khiển này, bot khởi tạo lựa chọn **ETH/USDT**, TP/CL **theo chiến lược**, và **tắt mở thêm lệnh**. Kiểm tra cấu hình rồi tự bật trên trang khi muốn. Sau đó cặp, TP/CL và trạng thái bật/tắt được giữ trong `binance-live.json`; cần Persistent Disk để giữ qua redeploy trên Render. Không di chuyển/xóa file backoff để bỏ qua lệnh chờ của Binance.
+
+Form giữ nguyên dữ liệu đang nhập khi polling; phải lưu/hủy thay đổi trước khi bật. Hai tab lưu chồng nhau sẽ nhận thông báo xung đột, không tự ghi đè bản mới. Hủy thay đổi tải lại cấu hình đang áp dụng. Thay đổi cặp/TP/CL hoặc tắt/bật trong lúc đang xử lý tín hiệu sẽ vô hiệu hóa tín hiệu cũ trước khi gửi entry; không phát lại tín hiệu cũ sau thao tác.
+
+### Thiết lập Render
+
+1. Dùng nhánh **`codex/okx-demo-autotrade`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
+2. Nếu dùng dịch vụ Docker hiện có, chọn nhánh trên và xóa Docker Command override cũ (nếu có), để dùng CMD của Dockerfile. Gắn Persistent Disk tại `/var/data`; đặt Health Check Path là **`/healthz`**. Trong **Environment**, điền:
+
+```env
+BOT_MODE=binance-live
+HOST=0.0.0.0
+LIVE_DATA_DIR=/var/data/binance-live
+BINANCE_API_KEY=key_cua_ban
+BINANCE_API_SECRET=secret_cua_ban
+DASHBOARD_USER=bot
+DASHBOARD_PASSWORD=mat_khau_rieng_it_nhat_8_ky_tu
+BINANCE_LIVE_ENABLED=false
+```
+
+Không điền `PORT`: Render tự cấp. Không đưa key/secret vào GitHub/chat. Tạo mật khẩu dashboard riêng, không dùng secret làm mật khẩu. API cần Read/Futures, khóa quyền rút tiền và chỉ cho IP outbound của dịch vụ Render. Tài khoản Futures cần **One-way, Single-Asset Mode**, có USDT khả dụng. Không dùng đồng thời bot khác hoặc đặt lệnh thủ công trên cùng tài khoản Futures.
+
+3. **Save, rebuild and deploy**. Mở URL Render, đăng nhập HTTP Basic bằng tài khoản `bot` và `DASHBOARD_PASSWORD`. Bảng ghi **BINANCE FUTURES · TIỀN THẬT**. Khi `BINANCE_LIVE_ENABLED=false`, chỉ đọc số dư/vị thế và không gửi lệnh, không đổi margin/leverage. Endpoint health công khai chỉ trả `{"ok":true}`, không có số dư hoặc thông tin tài khoản.
+4. Sau khi xác nhận số dư/tài khoản đúng và Binance không báo lỗi, đổi **`BINANCE_LIVE_ENABLED=true`**, lưu/deploy lại để cho phép tự giao dịch thật khi có tín hiệu đóng nến mới. Trước tín hiệu, bot chờ; không ép vào lệnh. Mật khẩu dashboard không bật/tắt cờ này.
+
+### Giới hạn được tự chọn theo số dư
+
+- **Isolated 1x**, tối đa **một vị thế trên toàn tài khoản**. Lệnh/vị thế có sẵn hoặc algo đang chờ đều chặn mở thêm. Bot kiểm tra cấu hình One-way/Single-Asset trước khi giao dịch, xác nhận isolated/1x trước mỗi entry.
+- Hạn mức danh nghĩa mỗi vị thế = **min(25 USDT, 5% vốn USDT)**. Ngân sách lỗ SL dự kiến = **min(1 USDT, 0,25% vốn USDT)**, có chi phí/trượt giá dự phòng trong tính khối lượng.
+- Dừng mở thêm khi vốn USDT (gồm lãi/lỗ chưa chốt) giảm **min(5 USDT, 1% vốn đầu ngày UTC)**. Đây không phải bảo đảm mức lỗ tối đa; không đóng cưỡng bức khi chạm hạn mức ngày. Chuyển tiền/reset vốn làm sai so sánh nên tránh thay đổi vốn khi bot chạy.
+- Đọc `LOT_SIZE`, `MARKET_LOT_SIZE`, `PRICE_FILTER`, `MIN_NOTIONAL` từ Binance; **bỏ qua khi hạn mức không đủ khối lượng tối thiểu**, không tăng vốn để ép lệnh. Đặc biệt BTC có thể yêu cầu mức tối thiểu lớn hơn hạn mức 25 USDT và sẽ bị bỏ qua.
+- Có thể hạ/tùy chỉnh trần bằng `BINANCE_MAX_NOTIONAL_USDT`, `BINANCE_MAX_RISK_USDT`, `BINANCE_MAX_DAILY_LOSS_USDT`. Code giới hạn các trần này không quá 100, 2 và 10 USDT; đòn bẩy cố định 1x.
+
+### Cách đặt và bảo vệ lệnh thật
+
+- Chỉ tín hiệu nến đóng mới trên Binance, không qua bộ lọc lịch sử 80% để ép xác suất thắng. Tín hiệu/bid-ask phải còn mới; giá lệch >0,3% hoặc spread >0,1% bị bỏ qua.
+- Entry là MARKET qua `/fapi/v1/order`. Sau xác nhận khớp, bot gửi riêng **STOP_MARKET** và **TAKE_PROFIT_MARKET** Close-All qua **`/fapi/v1/algoOrder`** (Algo API hiện tại), SL trước, rồi kiểm tra client ID, phía lệnh, mức trigger, working type và trạng thái trên sàn. Trigger dùng CONTRACT_PRICE, chốt toàn bộ tại TP1/SL; chưa chia TP2/dời SL hoặc thoát theo thời gian.
+- **Entry và SL/TP không nguyên tử**: có khoảng chưa được bảo vệ, kéo dài nếu mạng/API lỗi. Nếu không xác nhận được SL/TP, bot yêu cầu đóng **reduce-only** rồi khóa mở thêm. Lệnh đóng cũng có thể thất bại/không được xác nhận; khi đó phải kiểm tra/đóng trực tiếp trên Binance. Bot không đảm bảo đã thoát chỉ vì gửi yêu cầu.
+- Client ID xác định và ý định entry/algo/đóng được ghi trước mỗi lần gửi. Entry POST không bao giờ được tự gửi lại sau timeout. Bot query ID để đối chiếu, vẫn kiểm tra/hoàn thiện bảo vệ vị thế đã khớp khi đang HALTED; khớp một phần yêu cầu hủy phần chưa khớp và đóng phần vị thế thực tế. Lệnh đóng chưa chắc chắn không được tự gửi lại.
+- Khi vị thế đóng, bot chỉ hủy SL/TP thuộc client ID của chính nó, không hủy lệnh của người khác. SL/TP ở sàn vẫn tồn tại khi bot/Render dừng. Theo dõi trực tiếp tài khoản; bot chỉ poll tài khoản mỗi 5 giây.
+- Sổ thực nằm ở `LIVE_DATA_DIR/binance-live.json`. SQLite OS lock trong cùng thư mục ngăn hai tiến trình dùng chung sổ, tự nhả khi crash; vẫn phải dùng một Render instance và không chạy bản khác với thư mục khác trên cùng tài khoản. Không xóa disk/sổ để bỏ qua trạng thái chưa xác định. Thay API key cần đối chiếu và chuyển nhật ký vì sổ gắn với hash của key, không lưu key/secret.
+
+Nút **Dừng mở lệnh thật** chỉ tạm dừng entry; vẫn theo dõi vị thế/bảo vệ. Nút tiếp tục không xóa khóa HALTED. Khi HALTED, kiểm tra client ID và trạng thái Binance; chỉ khôi phục sổ sau khi đã đối chiếu bằng người hiểu code. Đừng đổi sang chế độ mô phỏng hoặc xóa journal để ép mở lệnh lại.
+
+**Kiểm chứng:** API ký HMAC-SHA256, allowlist endpoint, cờ chỉ đọc, giới hạn vốn, filters, timeout/restart, SL/TP, partial fill, reduce-only close, daily loss và đăng nhập dashboard được kiểm thử bằng API giả lập. Không có giao dịch tiền thật nào được đặt trong quá trình phát triển. Máy phát triển bị Binance HTTP 451, nên **chưa xác minh authenticated order/fill/Algo API trên Binance thật**; kiểm thử phần mềm không chứng minh hiệu quả hoặc bảo đảm an toàn vốn.
+
+Tài liệu API đã đối chiếu: [Account V3 / Account Configuration](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Account-Information-V3), [New Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Order), [New Algo Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order).
+
+## Mô phỏng bằng giá thật từ API Binance — không cần API key
+
+Trong Terminal Codespaces đang ở nhánh nâng cấp, dừng bot cũ bằng **Ctrl+C**, sau đó chạy:
+
+```bash
+git pull --ff-only origin codex/okx-demo-autotrade
+HOST=0.0.0.0 PORT=8787 npm run paper:binance
+```
+
+Mở/tải lại cổng **8787**. Tiêu đề phần giao dịch là **PAPER TRADING BINANCE · Tiền ảo theo giá thật**. Mô phỏng có sẵn **10.000 USDT ảo**, theo dõi BTCUSDT/ETHUSDT/SOLUSDT trên Binance **USDⓈ-M Futures**, và chỉ tự vào lệnh khi có tín hiệu đóng nến từ chiến lược RSI Hook / Pin-bar kết hợp EMA, VWAP, xác nhận H1. Không vào lệnh luân phiên theo kịch bản. Có thể phải chờ tín hiệu; chưa chứng minh chiến lược có lợi nhuận.
+
+- Chỉ đọc API công khai chính thức `https://fapi.binance.com`: `/fapi/v1/time`, `/fapi/v1/klines`, `/fapi/v1/ticker/bookTicker` và luồng kline công khai đã có. Không cần API key; không đăng nhập và không có yêu cầu đặt lệnh lên Binance.
+- Khóa nguồn **Binance**. Lấy nến thật để tính chỉ báo; mỗi tín hiệu chờ **bid/ask mới có timestamp sau khi nhận tín hiệu** để khớp ảo, không lấy giá đóng nến quá khứ làm giá khớp. LONG mua ask/bán bid, SHORT bán bid/mua ask; thêm phí 0,06% và trượt giá giả định 0,02% mỗi chiều.
+- Tối đa một vị thế, tối đa 1.000 USDT ảo/vị thế, khối lượng tính theo khoảng SL với ngân sách rủi ro dự kiến 10 USDT ảo. Chốt toàn bộ tại TP1 hoặc SL, hoặc hết 48 nến. Gap/trượt giá có thể làm lỗ lớn hơn dự kiến. Mô phỏng dùng giá quan sát được; không tái dựng diễn biến giữa các lần lấy giá và chưa tính funding, thanh khoản/độ sâu sổ lệnh hay liquidation.
+- Từ chối ticker thiếu/sai symbol, spread không hợp lệ, dữ liệu cũ hơn 15 giây hoặc tín hiệu cũ hơn 60 giây. Khi mất dữ liệu, không tạo lệnh khớp giả; lãi/lỗ chưa chốt giữ ở báo giá cuối, vị thế chỉ được xử lý lại khi có giá hợp lệ. Pause vẫn theo dõi thoát vị thế; reset chỉ xóa sổ/vị thế ảo.
+- Sổ Binance lưu ở **`paper-data/binance/ledger.json`**, tách khỏi OKX và demo giá giả; giữ số dư/lệnh qua khởi động lại. Chỉ chạy một bản với cùng sổ; có thể chọn thư mục riêng bằng `PAPER_DATA_DIR`. Chế độ OKX `npm run paper` hiện lưu riêng ở `paper-data/okx`.
+- Binance có thể từ chối IP/khu vực với HTTP **403/451**, tạm khóa với **418**, hoặc giới hạn tần suất với **429**. Dashboard hiển thị nguyên nhân và thời điểm thử lại; bot tuân thủ thời gian chờ và không chuyển nguồn hay tạo giá giả. Cần môi trường được Binance cho phép truy cập. Codespaces không bảo đảm truy cập Binance hoặc chạy liên tục.
+
+**Kiểm chứng:** kiểm thử bằng dữ liệu API giả lập bao gồm nguồn Binance cố định, sáu bảng giá, khớp bid/ask sau tín hiệu, LONG/SHORT, phí/trượt giá, stale quote và lỗi 451. Trong môi trường phát triển hiện tại, API Binance thực trả HTTP 451 do giới hạn khu vực, nên chưa xác minh luồng giá Binance thật liên tục hoặc hiệu quả chiến lược. Không có lệnh trên sàn được gửi trong kiểm thử.
+
+Tài liệu: [Binance Futures — Order Book Ticker](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Order-Book-Ticker), [Kline/Candlestick Data](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data).
+
+### Dashboard báo mất kết nối hoặc chưa có lệnh
+
+- **Chờ tín hiệu** khi giá vẫn cập nhật: chiến lược chưa thỏa điều kiện nên chưa có lệnh. Vốn ảo 10.000 và số lệnh 0 không phải lỗi kết nối.
+- **Dashboard chưa kết nối được máy chạy bot**: chưa đọc được trạng thái HTTP của tiến trình (nếu có HTTP 502/503 sẽ hiện mã). Thông tin cũ bị đánh dấu chưa cập nhật; không kết luận bot đã dừng hoặc vẫn giao dịch. Kiểm tra Codespaces còn hoạt động, Terminal chạy `npm run paper:binance` còn mở và tiến trình chưa kết thúc. Giữ Terminal đó chạy khi xem trang. Nếu đã dừng, chạy lại lệnh; sổ tiền ảo được giữ.
+- **Lỗi hiển thị dashboard**: tiến trình có trả dữ liệu, nhưng JavaScript dựng giao diện bị lỗi. Tải lại trang; xem lỗi Console nếu cần. Tình huống này không được báo nhầm thành mất kết nối máy chạy bot.
+- **Binance từ chối truy cập**: lỗi thị trường 403/418/429/451, khác lỗi kết nối dashboard. Giữ nguyên thời gian chờ; không xóa file backoff để ép thử lại.
+
+Terminal ghi các lần đổi trạng thái `SYNCING`, `STREAMING`, `RETRYING`, `BLOCKED` và lỗi báo giá. Khi báo sự cố, gửi dòng lỗi cuối/ảnh Terminal cùng ảnh dashboard để phân biệt tiến trình dừng, lỗi chuyển tiếp cổng, lỗi giao diện hay nguồn giá. Không gửi API key.
+
+## Demo tự trading ngay — không tài khoản, không API key
+
+Dùng lệnh này để xem bot tự mua/bán bằng tiền ảo ngay trên dashboard:
+
+```bash
+HOST=0.0.0.0 PORT=8787 npm run demo
+```
+
+Mở cổng **8787**. Bot có sẵn **10.000 USDT ảo**, mở giao dịch đầu ngay khi chạy và cập nhật giá/vị thế/lãi lỗ mỗi giây. Bot tự đóng ở TP/SL hoặc sau tối đa 20 giây, đợi 3 giây rồi mở giao dịch tiếp theo, luân phiên LONG/SHORT qua BTC, ETH, SOL. Dashboard có nút **Tạm dừng**, **Tiếp tục** và **Bắt đầu lại**; có tính phí 0,06% và trượt giá giả định 0,02% mỗi chiều. Tạm dừng vẫn cho phép thoát vị thế hiện có; bắt đầu lại xóa sổ ảo và mở lại phiên mới.
+
+**Đây là kịch bản minh họa với giá tổng hợp, không phải chiến lược giao dịch hay số liệu thắng/lãi thực tế.** Chế độ này hoạt động không cần mạng, không đọc API key hoặc gọi API đặt lệnh. Mỗi lần chạy là một phiên vốn ảo mới, không liên quan tới tài khoản OKX. Tham số giới hạn: tối đa 1 vị thế, giá trị 1.000 USDT ảo/vị thế và rủi ro dự kiến theo SL 10 USDT ảo.
+
+Nếu bạn đang ở nhánh nâng cấp trong Codespaces, dừng bot cũ bằng **Ctrl+C**, rồi cập nhật và chạy:
+
+```bash
+git pull --ff-only origin codex/okx-demo-autotrade
+HOST=0.0.0.0 PORT=8787 npm run demo
+```
+
+### Tiền ảo theo giá thị trường thật — cũng không cần API key
+
+```bash
+HOST=0.0.0.0 PORT=8787 npm run paper
+```
+
+Chế độ này chỉ đọc dữ liệu công khai OKX; không đăng nhập, không đặt lệnh lên sàn. Chờ tín hiệu đóng nến mới từ chiến lược hiện có để mở vị thế ảo, không yêu cầu ngưỡng kiểm chứng 80%. Vì thế không nhất thiết có lệnh ngay. Không tự chuyển sang giá giả nếu mất kết nối. Lệnh thoát dựa trên tick thực sự quan sát được, có thể bỏ lỡ diễn biến giữa hai tick; không phải mô hình khớp lệnh thực tế. Dùng toàn bộ TP1/SL, giới hạn giữ 48 nến. Sổ ảo lưu ở `paper-data/ledger.json` (Git bỏ qua), có thể đổi đường dẫn bằng `PAPER_DATA_DIR`. Chỉ chạy một tiến trình trên cùng sổ. Dashboard có điều khiển tạm dừng và reset như trên; reset xóa giao dịch/vị thế ảo đã lưu, không tác động tài khoản bên ngoài.
+
+Chế độ `okx:demo` dưới đây là tùy chọn riêng để gửi lệnh tới tài khoản Demo của sàn, nên mới cần API Demo.
+
+## Mới: tự giao dịch trên tài khoản OKX Demo
+
+`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (tự giao dịch minh họa ngay trong sổ ảo cục bộ). Riêng chế độ OKX này không đặt lệnh tiền thật; Binance tiền thật là chế độ tách biệt ở đầu tài liệu.
+
+### Bắt đầu trong Codespaces
+
+1. Dừng bot cũ bằng **Ctrl+C** trong Terminal. Chỉ chạy một tiến trình giao dịch trên một tài khoản Demo và giữ cổng Codespaces ở chế độ **Private**.
+2. Trên OKX, mở **Trade → Demo Trading → Demo Trading API**, tạo API với quyền **Read** và **Trade**. Không dùng API của tài khoản tiền thật. Chuẩn bị số dư USDT ảo trong tài khoản giao dịch Demo; chọn chế độ vị thế **One-way / Net** và chế độ tài khoản hỗ trợ futures isolated.
+3. Trong Terminal, chạy lần lượt:
+
+```bash
+npm ci --ignore-scripts
+npm run okx:demo:setup
+HOST=0.0.0.0 PORT=8787 npm run okx:demo
+```
+
+Lệnh setup hỏi key, secret và passphrase với ký tự nhập được ẩn; lưu vào `.env.okx-demo` chỉ đọc/ghi bởi người dùng hiện tại. File đã bị Git bỏ qua. Không gửi thông tin này vào chat, ảnh chụp, repository hoặc dashboard. API chưa được kiểm tra cho đến lúc chạy bot. Nếu cần nhập lại, dừng bot rồi chạy lại setup.
+
+4. Mở cổng **8787**. Phần đầu dashboard có **OKX DEMO · Tự động giao dịch bằng tiền ảo**, số dư, trạng thái tài khoản, vị thế, lệnh bot và lịch sử vị thế đóng. Chờ trạng thái **Đang chờ tín hiệu để vào lệnh**. Bot chỉ dùng tín hiệu đóng nến mới, không đặt lệnh ép buộc và không phát lại tín hiệu cũ.
+5. Đối chiếu lệnh và SL/TP trong ứng dụng **OKX Demo Trading**. Chưa có lệnh nếu chiến lược chưa xuất hiện tín hiệu; việc lấy được giá không đồng nghĩa bot sẽ lập tức mua/bán.
+
+### Quy tắc của bản thử nghiệm
+
+- Khóa OKX và nguồn dữ liệu OKX; không chuyển sàn tự động. Mọi yêu cầu giao dịch dùng `https://openapi.okx.com` và header `x-simulated-trading: 1`, không theo redirect; không có tùy chọn chuyển tiền thật.
+- Chỉ USDT linear perpetual, **isolated 1x**, tối đa **một vị thế trên tài khoản**. Bất kỳ vị thế, lệnh chờ hoặc SL/TP chờ hiện có đều chặn mở thêm. Dùng tài khoản Demo dành riêng cho bot, không đặt lệnh thủ công hoặc chạy bản sao khác trong lúc bot hoạt động.
+- Mặc định hạn mức danh nghĩa **50 USDT/lệnh**, rủi ro theo khoảng SL và chi phí dự phòng **1 USDT/lệnh**. Đọc `ctVal`, `ctMult`, `lotSz`, `minSz`, `tickSz` từ sàn; bỏ qua khi khối lượng dưới tối thiểu, giá đã vượt SL/TP, giá lệch quá 0.5%, ticker cũ hơn 15 giây hoặc tín hiệu cũ hơn 60 giây. Các hạn mức là tính toán trước khi gửi; trượt giá có thể làm giá trị thực tế lớn hơn.
+- Lệnh market gửi kèm SL và TP lên sàn. **Chốt toàn bộ tại TP1 hoặc SL**, chưa có chốt 50%/TP2/dời SL. Vì khác cách thoát lệnh của backtest cũ, thống kê đó không đánh giá hiệu quả chế độ Demo này.
+- Luồng thử nghiệm dùng tín hiệu đóng nến **không yêu cầu đạt bộ lọc lịch sử 80%**; dashboard ghi rõ việc này. Không mở theo cảnh báo xung lực chưa đóng nến. Telegram tắt và không tự tải kiểm chứng lịch sử trong chế độ này. `npm start` giữ luồng cảnh báo và bộ lọc cũ.
+- Khi vốn USDT (gồm lãi/lỗ chưa chốt) giảm **5 USDT** so với lần đồng bộ đầu của ngày UTC, bot khóa mở lệnh mới. Không tự đóng cưỡng bức vị thế. Đây là giới hạn dừng mở lệnh, không bảo đảm lỗ tối đa; nạp/rút/reset số dư Demo làm sai so sánh nên không thay đổi vốn khi chạy.
+- Ghi ý định đặt lệnh trước khi gửi, dùng client ID cố định và đối chiếu trạng thái khi khởi động lại. Timeout gửi lệnh không được tự gửi lại. Lệnh market chưa khớp đủ sau 30 giây, lệnh hủy đã khớp một phần, hoặc không xác minh được SL/TP sẽ khóa mở thêm và yêu cầu kiểm tra trên OKX. Bot không tự vá SL/TP hoặc đóng vị thế trong trường hợp đó.
+- File `data/okx-demo.lock` ngăn hai tiến trình dùng cùng thư mục dữ liệu. Cơ chế này không ngăn bản bot trên máy/thư mục khác; chỉ chạy một bản trên tài khoản. Giữ `data/okx-demo-trades.json` bền vững, không xóa để ép bot đặt lại lệnh.
+
+Có thể đặt giới hạn thấp hơn trong `.env` bằng `OKX_DEMO_MAX_NOTIONAL_USDT`, `OKX_DEMO_RISK_USDT`, `OKX_DEMO_DAILY_LOSS_USDT`. Giới hạn cứng của bản Demo tương ứng 100, 2 và 10 USDT.
+
+### Dừng / kiểm tra lỗi
+
+Trong **Terminal mới**, chạy:
+
+```bash
+npm run okx:demo:pause
+```
+
+Bot ngừng mở thêm sau khi kiểm tra tài khoản; một yêu cầu đang gửi có thể vẫn hoàn tất. SL/TP ở sàn vẫn hoạt động. Tiếp tục sau tạm dừng thông thường bằng `npm run okx:demo:resume`. Nhấn **Ctrl+C** dừng tiến trình, nhưng không hủy lệnh hay đóng vị thế ở OKX; thực hiện các việc đó trong ứng dụng OKX Demo nếu cần.
+
+Trạng thái **HALTED** là khóa lỗi bền vững, không được xóa bằng resume hoặc khởi động lại. Trước khi can thiệp nhật ký, đối chiếu client ID, lệnh chờ, SL/TP và vị thế trên OKX; cần người hiểu code kiểm tra và khôi phục. Không xóa file nhật ký hoặc tạo bản bot khác để bỏ qua khóa.
+
+**Kiểm chứng bản nâng cấp:** kiểm thử tự động dùng API giả lập cho chữ ký/header Demo, tính hợp đồng, giới hạn vốn, chống trùng, khởi động lại, timeout, khớp một phần và SL/TP. Chưa xác minh đặt/khớp lệnh trên tài khoản OKX Demo thật vì chưa có thông tin API của người dùng. Đặt lệnh thật trên môi trường Demo là bước kiểm thử tiếp theo; kết quả Demo không chứng minh lợi nhuận tiền thật. Codespaces có thể tự dừng.
+
+Tài liệu API: [OKX Demo Trading Services](https://www.okx.com/docs-v5/en/#overview-demo-trading-services), [Place order và attached TP/SL](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
+## Chế độ cảnh báo hiện có
 
 Bản 0.3.0 dành cho BTCUSDT, ETHUSDT, SOLUSDT, khung 5m/15m và xác nhận H1 trên thị trường **USDT perpetual**. Có bảng theo dõi giá và cơ hội LONG/SHORT, thống kê thắng lịch sử theo nhóm và Telegram. Dữ liệu công khai OKX, Bybit hoặc Binance, không cần API key tài khoản sàn. Có thể chạy trên trình duyệt bằng **GitHub Codespaces**, không cần cài Node.js trên máy cá nhân.
 
@@ -264,3 +440,4 @@ Bộ kiểm thử chạy trong GitHub Actions; Docker image được build trong
 - Bybit REST kline: https://bybit-exchange.github.io/docs/v5/market/kline
 - OKX REST/WS, candle history, volume và rate limits: https://www.okx.com/docs-v5/en/
 - Telegram Bot API: https://core.telegram.org/bots/api
+

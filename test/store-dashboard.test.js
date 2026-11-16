@@ -60,6 +60,10 @@ test('dashboard HTTP handler exposes read-only status/assets with CSP and reject
   const res = await fetch(url + '/api/status'); assert.equal(res.status, 200); assert.equal((await res.json()).demo, true);
   assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(await (await fetch(url)).text(), /Crypto Signal Monitor/);
+  assert.match(await (await fetch(url)).text(), /src="\/app.js" type="module"/);
+  const poller = await fetch(url + '/status-poller.js');
+  assert.equal(poller.status, 200); assert.match(poller.headers.get('content-type'), /javascript/);
+  assert.match(await poller.text(), /refreshStatus/);
   assert.equal((await fetch(url + '/.env')).status, 404);
   assert.equal((await fetch(url + '/api/status', { method: 'POST' })).status, 405);
   // Node fetch normalizes Host; verify the handler with the actual HTTP client.
@@ -67,3 +71,4 @@ test('dashboard HTTP handler exposes read-only status/assets with CSP and reject
   const foreign = await new Promise(resolve => http.get(url, { headers: { Host: 'evil.example' } }, r => { r.resume(); resolve(r.statusCode); }));
   assert.equal(foreign, 403);
 });
+
