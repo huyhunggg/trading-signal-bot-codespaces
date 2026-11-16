@@ -7,6 +7,14 @@ const labelled = (label, value, className = 'num') => { const n = el('div'); n.a
 function render(s) {
   last = s;
   renderTrading(s.trading);
+  const paper = s.trading?.mode?.startsWith('PAPER_'), showcase = s.trading?.mode === 'PAPER_DEMO';
+  document.querySelector('.validation-panel').hidden = !!paper;
+  document.querySelector('.history').hidden = !!paper;
+  document.querySelector('.metrics').hidden = showcase;
+  if (paper) {
+    document.querySelector('.intro h1').textContent = 'Bot tự mua/bán bằng tiền ảo.';
+    document.querySelector('.intro p').textContent = showcase ? 'Demo chạy ngay. Không cần tài khoản sàn hoặc API key.' : 'Tài khoản ảo, giá thị trường thật. Không cần API key.';
+  }
   const live = s.status.phase === 'STREAMING', demo = s.demo;
   $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : s.status.phase === 'STREAMING' && s.status.transport === 'REST_POLL' ? 'Đang cập nhật giá qua REST' : ({ STREAMING: 'Đang nhận dữ liệu WebSocket', SELECTING: 'Đang chọn nguồn giá', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', PAUSED: 'Đang chờ nguồn giá mở lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
   $('dot').className = 'dot ' + (demo ? 'demo' : live ? 'online' : '');
@@ -57,6 +65,9 @@ function render(s) {
 function renderTrading(t) {
   $('trading-panel').hidden = !t;
   if (!t) return;
+  const paper = t.mode === 'PAPER_DEMO' || t.mode === 'PAPER_LIVE';
+  $('paper-controls').hidden = !paper;
+  if (paper) { renderPaper(t); return; }
   const names = { STARTING: 'Đang kiểm tra', NEED_KEYS: 'Chưa nhập API Demo', READY: 'Đang chờ tín hiệu để vào lệnh',
     POSITION_OPEN: 'Đang quản lý / chờ vị thế', ORDER_SENT: 'Đã gửi lệnh', PAUSED: 'Tạm dừng mở lệnh', HALTED: 'Đã dừng vì cần kiểm tra', ERROR: 'Lỗi kết nối / cấu hình' };
   $('trading-status').textContent = names[t.status] || t.status;
@@ -67,6 +78,29 @@ function renderTrading(t) {
   $('trading-orders').replaceChildren(...(t.entries.length ? t.entries.map(o => el('p', `${date(o.createdAt)} · ${o.instId} · ${o.body.side.toUpperCase()} ${o.body.sz} hợp đồng · ${o.status}${o.fillPrice ? ' · khớp ' + o.fillPrice : ''} · SL ${o.body.attachAlgoOrds[0].slTriggerPx} / TP ${o.body.attachAlgoOrds[0].tpTriggerPx}`)) : [el('p', 'Chưa gửi lệnh. Bot chỉ vào khi xuất hiện tín hiệu mới; không ép mở lệnh.') ]));
   $('trading-history').replaceChildren(...(t.fills.length ? t.fills.map(p => el('p', `${date(p.closedAt)} · ${p.instId} · PnL đã thực hiện ${fmt(Number(p.pnl))} USDT (gồm giao dịch khác nếu có)`)) : [el('p', 'Chưa có lịch sử vị thế đóng.') ]));
 }
+function renderPaper(t) {
+  const offline = t.mode === 'PAPER_DEMO';
+  $('trading-title').textContent = offline ? 'DEMO TỰ TRADING · Không cần API key' : 'PAPER TRADING · Tiền ảo theo giá thật';
+  $('trading-status').textContent = t.paused ? 'Đã tạm dừng mở lệnh' : t.positions.length ? 'Đang tự theo dõi vị thế ảo' : 'Đang chờ mở lệnh ảo';
+  $('trading-reason').textContent = t.reason;
+  $('trading-limits').textContent = 'Vốn khởi đầu 10.000 USDT ảo · tối đa 1 vị thế · tối đa 1.000 USDT/vị thế · phí 0,06% và trượt giá 0,02% mỗi chiều.';
+  $('trading-policy').textContent = offline
+    ? 'KỊCH BẢN MINH HỌA: giá tổng hợp chạy mỗi giây, bot luân phiên LONG/SHORT để bạn thấy mở lệnh → lãi/lỗ → TP/SL. Không phải dữ liệu thị trường hay kết quả kiểm chứng chiến lược.'
+    : 'Lệnh chỉ tồn tại trong sổ tiền ảo cục bộ. Dùng tín hiệu đóng nến, chốt toàn bộ tại TP1 hoặc SL theo giá quan sát được; chưa xác minh hiệu quả chiến lược, không đặt lệnh lên sàn.';
+  $('trading-account').replaceChildren(labelled('Tổng vốn ảo (gồm vị thế mở)', fmt(t.equity)), labelled('Lãi/lỗ chưa chốt', fmt(t.unrealizedPnl)), labelled('Lãi/lỗ đã chốt sau phí', fmt(t.realizedPnl)), labelled('Lệnh đóng · thắng / thua', `${t.trades.length} · ${t.wins} / ${t.losses}`));
+  $('trading-positions').replaceChildren(...(t.positions.length ? t.positions.map(p => el('p', `${p.side} ${p.symbol} · ${fmt(p.quantity, 6)} coin · vào ${fmt(p.entry, 4)} · hiện tại ${fmt(p.mark, 4)} · SL ${fmt(p.sl, 4)} / TP ${fmt(p.tp, 4)} · PnL ${fmt(t.unrealizedPnl)} USDT ảo`, p.side.toLowerCase())) : [el('p', t.paused ? 'Đã dừng mở lệnh ảo.' : offline ? 'Chuẩn bị mở giao dịch ảo tiếp theo…' : 'Chờ tín hiệu đóng nến mới. Không cần tài khoản hoặc API key.') ]));
+  $('trading-orders-title').textContent = 'Lệnh ảo bot đã tự mở';
+  $('trading-orders').replaceChildren(...(t.entries.length ? t.entries.slice(0, 10).map(p => el('p', `${date(p.openedAt)} · ${p.side} ${p.symbol} · ${fmt(p.quantity, 6)} coin · giá vào ${fmt(p.entry, 4)} · phí vào ${fmt(p.entryFee, 4)} USDT ảo`)) : [el('p', 'Chưa có lệnh ảo.') ]));
+  $('trading-history').replaceChildren(...(t.trades.length ? t.trades.slice(0, 15).map(p => el('p', `${date(p.closedAt)} · ${p.side} ${p.symbol} · ${p.reason} · vào ${fmt(p.entry, 4)} → đóng ${fmt(p.exit, 4)} · sau phí ${p.pnl >= 0 ? '+' : ''}${fmt(p.pnl)} USDT ảo`, p.pnl >= 0 ? 'long' : 'short')) : [el('p', offline ? 'Giao dịch đầu sẽ tự đóng khi chạm TP/SL hoặc sau tối đa 20 giây.' : 'Chưa có giao dịch ảo đóng.') ]));
+  $('trading-help').textContent = offline ? 'Không kết nối tài khoản sàn. Bấm Tạm dừng hoặc Bắt đầu lại ở trên để thử. Khởi động lại chương trình sẽ bắt đầu một phiên minh họa mới.' : 'Không kết nối tài khoản sàn. Sổ tiền ảo được lưu trong paper-data. Tạm dừng chỉ ngăn mở thêm; Bắt đầu lại xóa sổ ảo và vị thế ảo của phiên hiện tại.';
+}
+for (const action of ['pause', 'resume', 'reset']) $('paper-' + action).addEventListener('click', async () => {
+  try {
+    const response = await fetch('/api/paper/' + action, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!response.ok) throw new Error('action failed');
+    render(await response.json()); $('paper-action-result').textContent = 'Đã cập nhật.';
+  } catch { $('paper-action-result').textContent = 'Chưa thực hiện được. Kiểm tra kết nối bot.'; }
+});
 function renderSignals() {
   if (!last) return;
   const records = [...last.signals.map(s => ({ ...s, watch: false })), ...(last.candidates || []).map(s => ({ ...s, watch: true }))];

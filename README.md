@@ -1,8 +1,37 @@
 # Confluence — tín hiệu crypto và OKX Demo tự động
 
+## Demo tự trading ngay — không tài khoản, không API key
+
+Dùng lệnh này để xem bot tự mua/bán bằng tiền ảo ngay trên dashboard:
+
+```bash
+HOST=0.0.0.0 PORT=8787 npm run demo
+```
+
+Mở cổng **8787**. Bot có sẵn **10.000 USDT ảo**, mở giao dịch đầu ngay khi chạy và cập nhật giá/vị thế/lãi lỗ mỗi giây. Bot tự đóng ở TP/SL hoặc sau tối đa 20 giây, đợi 3 giây rồi mở giao dịch tiếp theo, luân phiên LONG/SHORT qua BTC, ETH, SOL. Dashboard có nút **Tạm dừng**, **Tiếp tục** và **Bắt đầu lại**; có tính phí 0,06% và trượt giá giả định 0,02% mỗi chiều. Tạm dừng vẫn cho phép thoát vị thế hiện có; bắt đầu lại xóa sổ ảo và mở lại phiên mới.
+
+**Đây là kịch bản minh họa với giá tổng hợp, không phải chiến lược giao dịch hay số liệu thắng/lãi thực tế.** Chế độ này hoạt động không cần mạng, không đọc API key hoặc gọi API đặt lệnh. Mỗi lần chạy là một phiên vốn ảo mới, không liên quan tới tài khoản OKX. Tham số giới hạn: tối đa 1 vị thế, giá trị 1.000 USDT ảo/vị thế và rủi ro dự kiến theo SL 10 USDT ảo.
+
+Nếu bạn đang ở nhánh nâng cấp trong Codespaces, dừng bot cũ bằng **Ctrl+C**, rồi cập nhật và chạy:
+
+```bash
+git pull --ff-only origin codex/okx-demo-autotrade
+HOST=0.0.0.0 PORT=8787 npm run demo
+```
+
+### Tiền ảo theo giá thị trường thật — cũng không cần API key
+
+```bash
+HOST=0.0.0.0 PORT=8787 npm run paper
+```
+
+Chế độ này chỉ đọc dữ liệu công khai OKX; không đăng nhập, không đặt lệnh lên sàn. Chờ tín hiệu đóng nến mới từ chiến lược hiện có để mở vị thế ảo, không yêu cầu ngưỡng kiểm chứng 80%. Vì thế không nhất thiết có lệnh ngay. Không tự chuyển sang giá giả nếu mất kết nối. Lệnh thoát dựa trên tick thực sự quan sát được, có thể bỏ lỡ diễn biến giữa hai tick; không phải mô hình khớp lệnh thực tế. Dùng toàn bộ TP1/SL, giới hạn giữ 48 nến. Sổ ảo lưu ở `paper-data/ledger.json` (Git bỏ qua), có thể đổi đường dẫn bằng `PAPER_DATA_DIR`. Chỉ chạy một tiến trình trên cùng sổ. Dashboard có điều khiển tạm dừng và reset như trên; reset xóa giao dịch/vị thế ảo đã lưu, không tác động tài khoản bên ngoài.
+
+Chế độ `okx:demo` dưới đây là tùy chọn riêng để gửi lệnh tới tài khoản Demo của sàn, nên mới cần API Demo.
+
 ## Mới: tự giao dịch trên tài khoản OKX Demo
 
-`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (chỉ minh họa giao diện bằng giá tổng hợp). Không có chế độ đặt lệnh tiền thật.
+`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (tự giao dịch minh họa ngay trong sổ ảo cục bộ). Không có chế độ đặt lệnh tiền thật.
 
 ### Bắt đầu trong Codespaces
 
