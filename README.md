@@ -16,7 +16,7 @@ LIVE_DATA_DIR=/var/data/binance-live
 BINANCE_API_KEY=key_cua_ban
 BINANCE_API_SECRET=secret_cua_ban
 DASHBOARD_USER=bot
-DASHBOARD_PASSWORD=mat_khau_rieng_it_nhat_16_ky_tu
+DASHBOARD_PASSWORD=mat_khau_rieng_it_nhat_8_ky_tu
 BINANCE_LIVE_ENABLED=false
 ```
 

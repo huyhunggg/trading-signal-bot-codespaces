@@ -9,7 +9,7 @@ import { BinanceLiveTrader, liveOptions } from './binance-live-trader.js';
 const cfg = loadConfig({ HOST: process.env.HOST, PORT: process.env.PORT, EXCHANGE: 'binance', DATA_SOURCE_MODE: 'fixed' });
 cfg.dataDir = process.env.LIVE_DATA_DIR || './live-data';
 cfg.dashboardUser = process.env.DASHBOARD_USER || 'bot'; cfg.dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
-if (cfg.dashboardPassword.length < 16) throw new Error('Set DASHBOARD_PASSWORD to at least 16 characters before starting real-account mode');
+if (cfg.dashboardPassword.length < 8) throw new Error('Set DASHBOARD_PASSWORD to at least 8 characters before starting real-account mode');
 const trader = new BinanceLiveTrader(cfg, liveOptions()), sources = new SourceManager(cfg), abort = new AbortController();
 let engine, market = null, stopped = false, status = { phase: 'SELECTING', error: null };
 const server = dashboard(cfg, () => ({
