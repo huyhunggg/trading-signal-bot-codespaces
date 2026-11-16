@@ -1,5 +1,27 @@
 # Confluence — tín hiệu crypto và OKX Demo tự động
 
+## Mô phỏng bằng giá thật từ API Binance — không cần API key
+
+Trong Terminal Codespaces đang ở nhánh nâng cấp, dừng bot cũ bằng **Ctrl+C**, sau đó chạy:
+
+```bash
+git pull --ff-only origin codex/okx-demo-autotrade
+HOST=0.0.0.0 PORT=8787 npm run paper:binance
+```
+
+Mở/tải lại cổng **8787**. Tiêu đề phần giao dịch là **PAPER TRADING BINANCE · Tiền ảo theo giá thật**. Mô phỏng có sẵn **10.000 USDT ảo**, theo dõi BTCUSDT/ETHUSDT/SOLUSDT trên Binance **USDⓈ-M Futures**, và chỉ tự vào lệnh khi có tín hiệu đóng nến từ chiến lược RSI Hook / Pin-bar kết hợp EMA, VWAP, xác nhận H1. Không vào lệnh luân phiên theo kịch bản. Có thể phải chờ tín hiệu; chưa chứng minh chiến lược có lợi nhuận.
+
+- Chỉ đọc API công khai chính thức `https://fapi.binance.com`: `/fapi/v1/time`, `/fapi/v1/klines`, `/fapi/v1/ticker/bookTicker` và luồng kline công khai đã có. Không cần API key; không đăng nhập và không có yêu cầu đặt lệnh lên Binance.
+- Khóa nguồn **Binance**. Lấy nến thật để tính chỉ báo; mỗi tín hiệu chờ **bid/ask mới có timestamp sau khi nhận tín hiệu** để khớp ảo, không lấy giá đóng nến quá khứ làm giá khớp. LONG mua ask/bán bid, SHORT bán bid/mua ask; thêm phí 0,06% và trượt giá giả định 0,02% mỗi chiều.
+- Tối đa một vị thế, tối đa 1.000 USDT ảo/vị thế, khối lượng tính theo khoảng SL với ngân sách rủi ro dự kiến 10 USDT ảo. Chốt toàn bộ tại TP1 hoặc SL, hoặc hết 48 nến. Gap/trượt giá có thể làm lỗ lớn hơn dự kiến. Mô phỏng dùng giá quan sát được; không tái dựng diễn biến giữa các lần lấy giá và chưa tính funding, thanh khoản/độ sâu sổ lệnh hay liquidation.
+- Từ chối ticker thiếu/sai symbol, spread không hợp lệ, dữ liệu cũ hơn 15 giây hoặc tín hiệu cũ hơn 60 giây. Khi mất dữ liệu, không tạo lệnh khớp giả; lãi/lỗ chưa chốt giữ ở báo giá cuối, vị thế chỉ được xử lý lại khi có giá hợp lệ. Pause vẫn theo dõi thoát vị thế; reset chỉ xóa sổ/vị thế ảo.
+- Sổ Binance lưu ở **`paper-data/binance/ledger.json`**, tách khỏi OKX và demo giá giả; giữ số dư/lệnh qua khởi động lại. Chỉ chạy một bản với cùng sổ; có thể chọn thư mục riêng bằng `PAPER_DATA_DIR`. Chế độ OKX `npm run paper` hiện lưu riêng ở `paper-data/okx`.
+- Binance có thể từ chối IP/khu vực với HTTP **403/451**, tạm khóa với **418**, hoặc giới hạn tần suất với **429**. Dashboard hiển thị nguyên nhân và thời điểm thử lại; bot tuân thủ thời gian chờ và không chuyển nguồn hay tạo giá giả. Cần môi trường được Binance cho phép truy cập. Codespaces không bảo đảm truy cập Binance hoặc chạy liên tục.
+
+**Kiểm chứng:** kiểm thử bằng dữ liệu API giả lập bao gồm nguồn Binance cố định, sáu bảng giá, khớp bid/ask sau tín hiệu, LONG/SHORT, phí/trượt giá, stale quote và lỗi 451. Trong môi trường phát triển hiện tại, API Binance thực trả HTTP 451 do giới hạn khu vực, nên chưa xác minh luồng giá Binance thật liên tục hoặc hiệu quả chiến lược. Không có lệnh trên sàn được gửi trong kiểm thử.
+
+Tài liệu: [Binance Futures — Order Book Ticker](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Order-Book-Ticker), [Kline/Candlestick Data](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data).
+
 ## Demo tự trading ngay — không tài khoản, không API key
 
 Dùng lệnh này để xem bot tự mua/bán bằng tiền ảo ngay trên dashboard:

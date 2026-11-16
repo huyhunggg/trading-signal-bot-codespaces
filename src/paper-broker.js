@@ -2,8 +2,8 @@ import fs from 'node:fs';
 
 // Virtual ledger only. This module has no exchange client or order API.
 export class PaperBroker {
-  constructor({ now = Date.now, file = null, mode = 'PAPER_DEMO' } = {}) {
-    this.now = now; this.file = file; this.mode = mode;
+  constructor({ now = Date.now, file = null, mode = 'PAPER_DEMO', exchange = null } = {}) {
+    this.now = now; this.file = file; this.mode = mode; this.exchange = exchange;
     this.state = file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : this.empty();
     if (this.state.version !== 1 || !Number.isFinite(this.state.balance) || !Array.isArray(this.state.trades) || !Array.isArray(this.state.entries)) throw new Error('Invalid paper ledger');
     this.reason = 'Đang chờ giá để giao dịch bằng tiền ảo.'; this.lastSync = null;
@@ -23,13 +23,16 @@ export class PaperBroker {
         !Number.isFinite(quote?.price) || quote.price <= 0 || !Number.isFinite(quote.at) || now - quote.at > 15000 || quote.at > now + 1000 ||
         !Number.isFinite(signal.observedAt) || now - signal.observedAt > 60000 || signal.observedAt > now + 1000 ||
         (signal.layer === 'CLOSED' && (!signal.closed || !Number.isFinite(signal.candleEndTime) || now - signal.candleEndTime > 60000 || signal.candleEndTime > now))) return false;
-    const price = quote.price * (long ? 1.0002 : 0.9998), sl = Number(signal.sl), tp = Number(signal.tp1);
+    if (this.mode === 'PAPER_LIVE' && (signal.exchange !== quote.exchange || (this.exchange && signal.exchange !== this.exchange) || signal.layer !== 'CLOSED')) return false;
+    if ((quote.bid !== undefined || quote.ask !== undefined) &&
+        (!Number.isFinite(quote.bid) || !Number.isFinite(quote.ask) || quote.bid <= 0 || quote.ask < quote.bid)) return false;
+    const price = (long ? quote.ask ?? quote.price : quote.bid ?? quote.price) * (long ? 1.0002 : 0.9998), sl = Number(signal.sl), tp = Number(signal.tp1);
     if (!(long ? sl > 0 && sl < price && price < tp : tp > 0 && tp < price && price < sl)) return false;
-    const quantity = Math.min(1000 / price, 10 / (Math.abs(price - sl) + price * 0.0012));
+    const quantity = Math.min(1000 / price, 10 / (Math.abs(price - sl) + price * 0.0014));
     const margin = quantity * price, fee = margin * 0.0006;
     if (!Number.isFinite(quantity) || quantity <= 0 || s.balance < margin + fee) return false;
     const position = { id: signal.id, symbol: signal.symbol, exchange: signal.exchange, side: signal.side, quantity,
-      entry: price, mark: quote.price, sl, tp, margin, entryFee: fee, openedAt: now, source: signal.layer, maxHoldMs: signal.layer === 'DEMO_SCRIPT' ? 20000 : 48 * (signal.timeframe === '15m' ? 900000 : 300000) };
+      entry: price, mark: long ? quote.bid ?? quote.price : quote.ask ?? quote.price, sl, tp, margin, entryFee: fee, openedAt: now, source: signal.layer, maxHoldMs: signal.layer === 'DEMO_SCRIPT' ? 20000 : 48 * (signal.timeframe === '15m' ? 900000 : 300000) };
     s.balance -= fee; s.totalFees += fee; s.position = position;
     s.entries.unshift({ ...position }); s.entries = s.entries.slice(0, 100);
     s.seen.push(signal.id); s.seen = s.seen.slice(-10000);
@@ -41,14 +44,17 @@ export class PaperBroker {
     const quote = quotes[p.symbol];
     if (!quote || !Number.isFinite(quote.price) || quote.price <= 0 || !Number.isFinite(quote.at) || quote.at < p.openedAt || now - quote.at > 15000 || quote.at > now + 1000 ||
         (this.mode === 'PAPER_LIVE' && quote.exchange !== p.exchange)) return;
-    p.mark = quote.price; this.lastSync = now;
     const long = p.side === 'LONG';
-    const stop = long ? quote.price <= p.sl : quote.price >= p.sl;
-    const profit = long ? quote.price >= p.tp : quote.price <= p.tp;
+    if ((quote.bid !== undefined || quote.ask !== undefined) &&
+        (!Number.isFinite(quote.bid) || !Number.isFinite(quote.ask) || quote.bid <= 0 || quote.ask < quote.bid)) return;
+    const executable = long ? quote.bid ?? quote.price : quote.ask ?? quote.price;
+    p.mark = executable; this.lastSync = now;
+    const stop = long ? executable <= p.sl : executable >= p.sl;
+    const profit = long ? executable >= p.tp : executable <= p.tp;
     const timeout = now - p.openedAt >= p.maxHoldMs;
     if (!stop && !profit && !timeout) return;
     // Observed ticks, not assumed OHLC paths. Gaps fill at observed price with adverse slippage.
-    const exit = quote.price * (long ? 0.9998 : 1.0002), fee = p.quantity * exit * 0.0006;
+    const exit = executable * (long ? 0.9998 : 1.0002), fee = p.quantity * exit * 0.0006;
     const gross = (exit - p.entry) * p.quantity * (long ? 1 : -1), net = gross - p.entryFee - fee;
     this.state.balance += gross - fee; this.state.totalFees += fee;
     this.state.trades.unshift({ ...p, exit, exitFee: fee, pnl: net, closedAt: now, reason: stop ? 'SL' : profit ? 'TP' : 'TIME_EXIT' });
@@ -59,7 +65,7 @@ export class PaperBroker {
   snapshot() {
     const s = this.state, p = s.position;
     const unrealized = p ? (p.mark - p.entry) * p.quantity * (p.side === 'LONG' ? 1 : -1) : 0;
-    return { mode: this.mode, status: s.paused ? 'PAUSED' : p ? 'POSITION_OPEN' : 'READY', reason: this.reason,
+    return { mode: this.mode, exchange: this.exchange, status: s.paused ? 'PAUSED' : p ? 'POSITION_OPEN' : 'READY', reason: this.reason,
       initialBalance: s.initialBalance, balance: s.balance, equity: s.balance + unrealized, unrealizedPnl: unrealized,
       realizedPnl: s.balance - s.initialBalance + (p?.entryFee || 0), totalFees: s.totalFees,
       available: s.balance - (p?.margin || 0), positions: p ? [{ ...p }] : [], entries: s.entries,

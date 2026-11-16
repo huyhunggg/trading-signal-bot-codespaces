@@ -79,6 +79,22 @@ export function parseStream(exchange, raw, receivedAt = Date.now()) {
 
 export class Market {
   constructor(cfg, request = getJson) { this.cfg = { ...cfg }; this.client = new RestQueue(this.cfg, request); this.request = url => this.client.get(url); }
+  async quote(symbol, now) {
+    const { exchange } = this.cfg;
+    if (!this.cfg.symbols.includes(symbol) || !['binance', 'okx'].includes(exchange)) throw new Error('Unsupported paper quote');
+    const endpoint = exchange === 'binance'
+      ? `${ROOT.binance}/fapi/v1/ticker/bookTicker?${new URLSearchParams({ symbol })}`
+      : `${ROOT.okx}/api/v5/market/ticker?${new URLSearchParams({ instId: okxInstrument(symbol) })}`;
+    const json = await this.request(endpoint), row = exchange === 'binance' ? json : json.data?.[0];
+    now ??= Date.now();
+    const bid = Number(exchange === 'binance' ? row?.bidPrice : row?.bidPx);
+    const ask = Number(exchange === 'binance' ? row?.askPrice : row?.askPx);
+    const at = Number(exchange === 'binance' ? row?.time : row?.ts);
+    const expected = exchange === 'binance' ? row?.symbol === symbol : row?.instId === okxInstrument(symbol);
+    if (!expected || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid ||
+        !Number.isFinite(at) || now - at > 15000 || at > now + 1000) throw new Error('Quote is missing, stale or invalid');
+    return { symbol, exchange, bid, ask, price: (bid + ask) / 2, at };
+  }
   async serverTime() {
     const { exchange } = this.cfg;
     const json = await this.request(ROOT[exchange] + (exchange === 'binance' ? '/fapi/v1/time' : exchange === 'bybit' ? '/v5/market/time' : '/api/v5/public/time'));
@@ -161,3 +177,4 @@ export class Market {
     return ws;
   }
 }
+

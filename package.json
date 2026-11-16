@@ -15,6 +15,7 @@
     "start": "node --use-env-proxy --env-file-if-exists=.env src/main.js",
     "demo": "node src/paper-main.js",
     "paper": "node --use-env-proxy src/paper-main.js --live",
+    "paper:binance": "node --use-env-proxy src/paper-main.js --live --binance",
     "check": "node --use-env-proxy --env-file-if-exists=.env src/main.js --check",
     "test": "node --test",
     "calibrate": "node --use-env-proxy --env-file-if-exists=.env scripts/calibrate.js",

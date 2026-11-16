@@ -46,7 +46,7 @@ test('virtual ledger survives restart and rejects duplicate/stale/unfinished sig
   assert.equal(b.open({ ...sig(), layer: 'IMPULSE' }, { price: 100, at: now }), false);
   assert.equal(b.open({ ...sig(), observedAt: 0 }, { price: 100, at: now }), false);
   assert.equal(b.open({ ...sig(), layer: 'CLOSED', closed: false }, { price: 100, at: now }), false);
-  b.open(sig(), { price: 100, at: now });
+  b.open({ ...sig(), layer: 'CLOSED', closed: true, candleEndTime: now }, { price: 100, at: now, exchange: 'okx' });
   b = new PaperBroker({ file, now: () => now, mode: 'PAPER_LIVE' }); assert.equal(b.snapshot().positions.length, 1);
   now += 1000; b.mark({ BTCUSDT: { price: 103, at: now, exchange: 'bybit' } }); assert.equal(b.snapshot().trades.length, 0);
   b.mark({ BTCUSDT: { price: 103, at: now, exchange: 'okx' } }); assert.equal(b.snapshot().trades.length, 1);
