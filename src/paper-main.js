@@ -22,6 +22,12 @@ const sources = live ? new SourceManager({ ...cfg, dataDir: dir }) : null;
 const controller = new AbortController(), quotes = {};
 let rows = [], engine, activeMarket, quoteBusy = false, quoteError = null, stopped = false, tick = 0, generation = Date.now(), nextEntry = 0, entries = 0;
 let status = { phase: live ? 'SELECTING' : 'DEMO', transport: live ? null : 'OFFLINE', error: null };
+function setStatus(patch) {
+  const previous = status; status = { ...status, ...patch };
+  if (status.phase !== previous.phase || status.transport !== previous.transport || status.error !== previous.error) {
+    console.log(`[${new Date().toISOString()}] ${exchange.toUpperCase()} ${status.phase}${status.transport ? ' ' + status.transport : ''}${status.error ? ' · ' + status.error : ''}`);
+  }
+}
 const base = { BTCUSDT: 70000, ETHUSDT: 2500, SOLUSDT: 150 };
 function demoTick() {
   const now = Date.now();
@@ -50,7 +56,7 @@ const actions = {
   },
 };
 const server = dashboard(cfg, () => ({
-  version: 'paper-2', demo: !live, exchange: live ? cfg.exchange : 'synthetic', sourceMode: live ? cfg.sourceMode : 'offline', sources: sources?.snapshot() || [],
+  version: 'paper-3', demo: !live, exchange: live ? cfg.exchange : 'synthetic', sourceMode: live ? cfg.sourceMode : 'offline', sources: sources?.snapshot() || [],
   symbols: cfg.symbols, timeframes: cfg.timeframes, htf: cfg.htf, serverNow: Date.now(), streamStaleMs: cfg.streamStaleMs,
   pinbarEnabled: cfg.pinbarEnabled, status, rows, signals: [], candidates: [], trading: { ...broker.snapshot(), quoteError,
     marketPhase: status.phase, marketError: status.error,
@@ -81,6 +87,7 @@ async function liveTick() {
     });
   } catch (e) {
     execution.clear();
+    if (quoteError?.message !== e.message) console.warn(`[${new Date().toISOString()}] ${exchange.toUpperCase()} QUOTE_ERROR · ${e.message}`);
     quoteError = { message: e.message, httpStatus: e.httpStatus || null, retryAt: e.retryAt || null };
   } finally { quoteBusy = false; }
 }
@@ -94,7 +101,7 @@ if (!live) demoTick();
 else {
   while (!stopped) {
     try {
-      status = { ...status, phase: 'SELECTING', error: null, retryAt: null };
+      setStatus({ phase: 'SELECTING', error: null, retryAt: null });
       const selected = await sources.choose();
       // SourceManager's cfg is separate: keep the signal engine and ledger on its chosen venue.
       cfg.exchange = sources.cfg.exchange;
@@ -104,15 +111,15 @@ else {
       } });
       await runLiveSession({ cfg, market: selected.market, engine, serverTime: selected.serverTime,
         now: () => Date.now() + selected.offset, signal: controller.signal,
-        onStatus: patch => { status = { ...status, ...patch }; }, onReady: () => {} });
+        onStatus: patch => setStatus(patch), onReady: () => {} });
     } catch (e) {
       if (stopped) break;
       activeMarket = null; execution.clear(); sources.failed(e);
       const health = sources.snapshot().find(s => s.exchange === exchange);
       const httpStatus = e.httpStatus || health?.httpStatus;
       const retryAt = e.retryAt || health?.retryAt || Date.now() + 5000;
-      status = { phase: [403, 418, 451].includes(httpStatus) ? 'BLOCKED' : 'RETRYING', httpStatus, retryAt,
-        error: `${exchange.toUpperCase()}: ${health?.reason || e.message || 'Chưa nhận được giá công khai.'} Tiền ảo đang chờ dữ liệu.` };
+      setStatus({ phase: [403, 418, 451].includes(httpStatus) ? 'BLOCKED' : 'RETRYING', httpStatus, retryAt,
+        error: `${exchange.toUpperCase()}: ${health?.reason || e.message || 'Chưa nhận được giá công khai.'} Tiền ảo đang chờ dữ liệu.` });
       while (!stopped && Date.now() < retryAt) await delay(Math.min(1000, retryAt - Date.now()), undefined, { signal: controller.signal }).catch(() => {});
     }
   }

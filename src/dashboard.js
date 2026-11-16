@@ -5,6 +5,7 @@ export function dashboard(cfg, snapshot, actions = {}) {
   const assets = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+    ['/status-poller.js', ['status-poller.js', 'text/javascript; charset=utf-8']],
     ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ]);
   const server = http.createServer((req, res) => {

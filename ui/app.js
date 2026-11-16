@@ -1,3 +1,5 @@
+import { refreshStatus } from './status-poller.js';
+
 const $ = id => document.getElementById(id);
 let last;
 const fmt = (v, digits = 2) => typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—';
@@ -129,14 +131,23 @@ $('symbol').addEventListener('change', renderSignals); $('layer').addEventListen
 $('eligibility').addEventListener('change', renderSignals);
 async function poll() {
   try {
-    const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
-    if (!response.ok) throw new Error('status unavailable');
-    render(await response.json());
-  } catch {
-    $('connection').textContent = 'Không kết nối được bot'; $('dot').className = 'dot';
-    if (last) render({ ...last, status: { ...last.status, phase: 'RETRYING', error: 'Mất kết nối với tiến trình bot. Dữ liệu bên dưới là dữ liệu đã nhận trước đó.' } });
-    else { $('notice').hidden = false; $('notice').textContent = 'Không đọc được trạng thái bot. Kiểm tra tiến trình npm start trên máy.'; }
+    await refreshStatus({ render,
+      onConnectionError: error => showDashboardProblem('CONNECTION', error),
+      onRenderError: error => { console.error('Dashboard rendering failed', error); showDashboardProblem('RENDER', error); },
+    });
   } finally { setTimeout(poll, 1000); }
+}
+function showDashboardProblem(kind, error) {
+  const connected = kind === 'RENDER', notice = $('notice');
+  $('connection').textContent = connected ? 'Lỗi hiển thị dashboard' : 'Dashboard chưa kết nối được máy chạy bot';
+  $('dot').className = 'dot'; notice.hidden = false; notice.className = 'notice';
+  notice.textContent = connected
+    ? 'Máy chạy bot vẫn trả dữ liệu, nhưng giao diện gặp lỗi hiển thị. Tải lại trang. Lỗi này không xác nhận bot đã dừng giao dịch.'
+    : `Không nhận được trạng thái máy chạy bot${error.httpStatus ? ` (HTTP ${error.httpStatus})` : ''}. Kiểm tra Codespaces và Terminal đang chạy npm run paper:binance. Dữ liệu dưới đây chưa được cập nhật; chưa thể xác nhận bot còn chạy hay đã dừng.`;
+  if (last?.trading) {
+    $('trading-status').textContent = 'Trạng thái chưa cập nhật';
+    $('trading-reason').textContent = 'Thông tin vị thế và tín hiệu đang hiển thị là dữ liệu đã nhận trước đó. Cần kết nối lại để xác nhận trạng thái hiện tại.';
+  }
 }
 poll();
 

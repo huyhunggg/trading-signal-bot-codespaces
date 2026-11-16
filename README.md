@@ -22,6 +22,15 @@ Mở/tải lại cổng **8787**. Tiêu đề phần giao dịch là **PAPER TRA
 
 Tài liệu: [Binance Futures — Order Book Ticker](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Order-Book-Ticker), [Kline/Candlestick Data](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data).
 
+### Dashboard báo mất kết nối hoặc chưa có lệnh
+
+- **Chờ tín hiệu** khi giá vẫn cập nhật: chiến lược chưa thỏa điều kiện nên chưa có lệnh. Vốn ảo 10.000 và số lệnh 0 không phải lỗi kết nối.
+- **Dashboard chưa kết nối được máy chạy bot**: chưa đọc được trạng thái HTTP của tiến trình (nếu có HTTP 502/503 sẽ hiện mã). Thông tin cũ bị đánh dấu chưa cập nhật; không kết luận bot đã dừng hoặc vẫn giao dịch. Kiểm tra Codespaces còn hoạt động, Terminal chạy `npm run paper:binance` còn mở và tiến trình chưa kết thúc. Giữ Terminal đó chạy khi xem trang. Nếu đã dừng, chạy lại lệnh; sổ tiền ảo được giữ.
+- **Lỗi hiển thị dashboard**: tiến trình có trả dữ liệu, nhưng JavaScript dựng giao diện bị lỗi. Tải lại trang; xem lỗi Console nếu cần. Tình huống này không được báo nhầm thành mất kết nối máy chạy bot.
+- **Binance từ chối truy cập**: lỗi thị trường 403/418/429/451, khác lỗi kết nối dashboard. Giữ nguyên thời gian chờ; không xóa file backoff để ép thử lại.
+
+Terminal ghi các lần đổi trạng thái `SYNCING`, `STREAMING`, `RETRYING`, `BLOCKED` và lỗi báo giá. Khi báo sự cố, gửi dòng lỗi cuối/ảnh Terminal cùng ảnh dashboard để phân biệt tiến trình dừng, lỗi chuyển tiếp cổng, lỗi giao diện hay nguồn giá. Không gửi API key.
+
 ## Demo tự trading ngay — không tài khoản, không API key
 
 Dùng lệnh này để xem bot tự mua/bán bằng tiền ảo ngay trên dashboard:
