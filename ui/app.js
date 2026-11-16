@@ -17,6 +17,13 @@ function render(s) {
     document.querySelector('.intro h1').textContent = 'Bot tự mua/bán bằng tiền ảo.';
     document.querySelector('.intro p').textContent = showcase ? 'Demo chạy ngay. Không cần tài khoản sàn hoặc API key.' : 'Tài khoản ảo, giá thị trường thật. Không cần API key.';
   }
+  if (s.trading?.mode === 'BINANCE_LIVE') {
+    document.querySelector('.intro h1').textContent = 'Binance Futures · Giao dịch tiền thật';
+    document.querySelector('.intro p').textContent = 'Số dư và vị thế thực trên Binance. Kiểm tra trạng thái đặt lệnh ở bên dưới.';
+    document.querySelector('.validation-panel').hidden = true;
+    document.querySelector('.history').hidden = true;
+    document.querySelector('.metrics').hidden = true;
+  }
   const live = s.status.phase === 'STREAMING', demo = s.demo;
   $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : s.status.phase === 'STREAMING' && s.status.transport === 'REST_POLL' ? 'Đang cập nhật giá qua REST' : ({ STREAMING: 'Đang nhận dữ liệu WebSocket', SELECTING: 'Đang chọn nguồn giá', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', PAUSED: 'Đang chờ nguồn giá mở lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
   $('dot').className = 'dot ' + (demo ? 'demo' : live ? 'online' : '');
@@ -69,6 +76,8 @@ function renderTrading(t) {
   if (!t) return;
   const paper = t.mode === 'PAPER_DEMO' || t.mode === 'PAPER_LIVE';
   $('paper-controls').hidden = !paper;
+  $('live-controls').hidden = t.mode !== 'BINANCE_LIVE';
+  if (t.mode === 'BINANCE_LIVE') { renderLive(t); return; }
   if (paper) { renderPaper(t); return; }
   const names = { STARTING: 'Đang kiểm tra', NEED_KEYS: 'Chưa nhập API Demo', READY: 'Đang chờ tín hiệu để vào lệnh',
     POSITION_OPEN: 'Đang quản lý / chờ vị thế', ORDER_SENT: 'Đã gửi lệnh', PAUSED: 'Tạm dừng mở lệnh', HALTED: 'Đã dừng vì cần kiểm tra', ERROR: 'Lỗi kết nối / cấu hình' };
@@ -80,6 +89,29 @@ function renderTrading(t) {
   $('trading-orders').replaceChildren(...(t.entries.length ? t.entries.map(o => el('p', `${date(o.createdAt)} · ${o.instId} · ${o.body.side.toUpperCase()} ${o.body.sz} hợp đồng · ${o.status}${o.fillPrice ? ' · khớp ' + o.fillPrice : ''} · SL ${o.body.attachAlgoOrds[0].slTriggerPx} / TP ${o.body.attachAlgoOrds[0].tpTriggerPx}`)) : [el('p', 'Chưa gửi lệnh. Bot chỉ vào khi xuất hiện tín hiệu mới; không ép mở lệnh.') ]));
   $('trading-history').replaceChildren(...(t.fills.length ? t.fills.map(p => el('p', `${date(p.closedAt)} · ${p.instId} · PnL đã thực hiện ${fmt(Number(p.pnl))} USDT (gồm giao dịch khác nếu có)`)) : [el('p', 'Chưa có lịch sử vị thế đóng.') ]));
 }
+function renderLive(t) {
+  $('trading-title').textContent = 'BINANCE FUTURES · TIỀN THẬT';
+  $('trading-panel').classList.add('real-money');
+  const labels = { STARTING: 'Đang kiểm tra', NEED_KEYS: 'Chưa cấu hình API', DISABLED: 'Chỉ đọc · đặt lệnh đang tắt', READY: 'Đã bật · chờ tín hiệu',
+    PAUSED: 'Dừng mở thêm', HALTED: 'Đã khóa mở thêm · cần kiểm tra', ERROR: 'Lỗi · không mở thêm', POSITION_OPEN: 'Có vị thế / lệnh trên sàn', WAITING_DATA: 'Chờ dữ liệu Binance' };
+  $('trading-status').textContent = labels[t.status] || t.status;
+  $('trading-reason').textContent = t.reason;
+  $('trading-limits').textContent = t.limits ? `Isolated 1x · tối đa 1 vị thế · hạn mức hiện tại ${fmt(t.limits.notional)} USDT/vị thế · rủi ro SL dự kiến ${fmt(t.limits.risk)} USDT · dừng mở thêm khi vốn giảm ${fmt(t.limits.daily)} USDT/ngày UTC.` : 'Đang đọc số dư để tính giới hạn vốn.';
+  $('trading-policy').textContent = 'GIAO DỊCH TIỀN THẬT. Dùng chiến lược tín hiệu hiện có, chưa được chứng minh có lãi. Lệnh market và SL/TP gửi riêng: có khoảng thời gian chưa được bảo vệ. Nếu không xác nhận SL/TP, bot yêu cầu đóng reduce-only và khóa mở thêm; mất mạng có thể khiến lệnh đóng không thành công.';
+  $('trading-account').replaceChildren(labelled('Vốn USDT thật', fmt(t.equity)), labelled('USDT khả dụng', fmt(t.available)), labelled('Lãi/lỗ chưa chốt', fmt(t.unrealizedPnl)), labelled('Đồng bộ tài khoản', t.lastSync ? date(t.lastSync) : 'Chưa kết nối'));
+  $('trading-positions').replaceChildren(...(t.positions.length ? t.positions.map(p => el('p', `${p.symbol} · ${Number(p.quantity) > 0 ? 'LONG' : 'SHORT'} ${p.quantity} · vào ${p.entry} · mark ${p.mark} · PnL ${fmt(Number(p.pnl))} USDT thật`)) : [el('p', t.lastSync ? 'Không có vị thế mở.' : 'Chưa đọc được tài khoản thật.') ]));
+  $('trading-orders-title').textContent = 'Lệnh tiền thật do bot gửi';
+  $('trading-orders').replaceChildren(...(t.entries.length ? t.entries.map(e => el('p', `${date(e.createdAt)} · ${e.symbol} ${e.side} ${e.quantity} · ${e.status} · SL ${e.sl} / TP ${e.tp} · ID ${e.id}`)) : [el('p', 'Chưa gửi lệnh tiền thật.') ]));
+  $('trading-history').replaceChildren(el('p', 'Đối chiếu giá khớp, phí, funding và lãi/lỗ đã chốt trong lịch sử tài khoản Binance.'));
+  $('trading-help').textContent = 'Dừng mở thêm không đóng vị thế. SL/TP trên Binance vẫn tồn tại khi bot dừng. Không đặt lệnh thủ công hay chạy nhiều bot trên cùng tài khoản Futures. Nếu báo HALTED, kiểm tra Binance; không xóa nhật ký để bỏ qua khóa.';
+}
+for (const action of ['pause', 'resume']) $('live-' + action).addEventListener('click', async () => {
+  try {
+    const response = await fetch('/api/live/' + action, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!response.ok) throw new Error('Action failed');
+    render(await response.json()); $('live-action-result').textContent = 'Đã cập nhật. Khóa HALTED vẫn giữ nguyên nếu có.';
+  } catch { $('live-action-result').textContent = 'Chưa xác nhận thao tác. Kiểm tra trạng thái trực tiếp trên Binance.'; }
+});
 function renderPaper(t) {
   const offline = t.mode === 'PAPER_DEMO';
   $('trading-title').textContent = offline ? 'DEMO TỰ TRADING · Không cần API key' : `PAPER TRADING ${t.exchange?.toUpperCase() || ''} · Tiền ảo theo giá thật`;

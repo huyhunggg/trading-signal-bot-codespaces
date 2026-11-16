@@ -8,6 +8,7 @@
     "node": ">=24.5.0"
   },
   "scripts": {
+    "trade:binance": "node --use-env-proxy --env-file-if-exists=.env src/binance-live-main.js",
     "okx:demo:setup": "node scripts/setup-okx-demo.js",
     "okx:demo": "node --use-env-proxy --env-file-if-exists=.env --env-file-if-exists=.env.okx-demo src/main.js --okx-demo",
     "okx:demo:pause": "node --env-file-if-exists=.env scripts/okx-demo-control.js pause",

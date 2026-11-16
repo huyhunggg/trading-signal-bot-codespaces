@@ -1,4 +1,52 @@
-# Confluence — tín hiệu crypto và OKX Demo tự động
+# Confluence — tín hiệu crypto, mô phỏng và Binance Futures thật
+
+## Binance Futures tiền thật trên Render
+
+Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.
+
+### Thiết lập Render
+
+1. Dùng nhánh **`codex/okx-demo-autotrade`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
+2. Nếu dùng dịch vụ Docker hiện có, chọn nhánh trên và xóa Docker Command override cũ (nếu có), để dùng CMD của Dockerfile. Gắn Persistent Disk tại `/var/data`; đặt Health Check Path là **`/healthz`**. Trong **Environment**, điền:
+
+```env
+BOT_MODE=binance-live
+HOST=0.0.0.0
+LIVE_DATA_DIR=/var/data/binance-live
+BINANCE_API_KEY=key_cua_ban
+BINANCE_API_SECRET=secret_cua_ban
+DASHBOARD_USER=bot
+DASHBOARD_PASSWORD=mat_khau_rieng_it_nhat_16_ky_tu
+BINANCE_LIVE_ENABLED=false
+```
+
+Không điền `PORT`: Render tự cấp. Không đưa key/secret vào GitHub/chat. Tạo mật khẩu dashboard riêng, không dùng secret làm mật khẩu. API cần Read/Futures, khóa quyền rút tiền và chỉ cho IP outbound của dịch vụ Render. Tài khoản Futures cần **One-way, Single-Asset Mode**, có USDT khả dụng. Không dùng đồng thời bot khác hoặc đặt lệnh thủ công trên cùng tài khoản Futures.
+
+3. **Save, rebuild and deploy**. Mở URL Render, đăng nhập HTTP Basic bằng tài khoản `bot` và `DASHBOARD_PASSWORD`. Bảng ghi **BINANCE FUTURES · TIỀN THẬT**. Khi `BINANCE_LIVE_ENABLED=false`, chỉ đọc số dư/vị thế và không gửi lệnh, không đổi margin/leverage. Endpoint health công khai chỉ trả `{"ok":true}`, không có số dư hoặc thông tin tài khoản.
+4. Sau khi xác nhận số dư/tài khoản đúng và Binance không báo lỗi, đổi **`BINANCE_LIVE_ENABLED=true`**, lưu/deploy lại để cho phép tự giao dịch thật khi có tín hiệu đóng nến mới. Trước tín hiệu, bot chờ; không ép vào lệnh. Mật khẩu dashboard không bật/tắt cờ này.
+
+### Giới hạn được tự chọn theo số dư
+
+- **Isolated 1x**, tối đa **một vị thế trên toàn tài khoản**. Lệnh/vị thế có sẵn hoặc algo đang chờ đều chặn mở thêm. Bot kiểm tra cấu hình One-way/Single-Asset trước khi giao dịch, xác nhận isolated/1x trước mỗi entry.
+- Hạn mức danh nghĩa mỗi vị thế = **min(25 USDT, 5% vốn USDT)**. Ngân sách lỗ SL dự kiến = **min(1 USDT, 0,25% vốn USDT)**, có chi phí/trượt giá dự phòng trong tính khối lượng.
+- Dừng mở thêm khi vốn USDT (gồm lãi/lỗ chưa chốt) giảm **min(5 USDT, 1% vốn đầu ngày UTC)**. Đây không phải bảo đảm mức lỗ tối đa; không đóng cưỡng bức khi chạm hạn mức ngày. Chuyển tiền/reset vốn làm sai so sánh nên tránh thay đổi vốn khi bot chạy.
+- Đọc `LOT_SIZE`, `MARKET_LOT_SIZE`, `PRICE_FILTER`, `MIN_NOTIONAL` từ Binance; **bỏ qua khi hạn mức không đủ khối lượng tối thiểu**, không tăng vốn để ép lệnh. Đặc biệt BTC có thể yêu cầu mức tối thiểu lớn hơn hạn mức 25 USDT và sẽ bị bỏ qua.
+- Có thể hạ/tùy chỉnh trần bằng `BINANCE_MAX_NOTIONAL_USDT`, `BINANCE_MAX_RISK_USDT`, `BINANCE_MAX_DAILY_LOSS_USDT`. Code giới hạn các trần này không quá 100, 2 và 10 USDT; đòn bẩy cố định 1x.
+
+### Cách đặt và bảo vệ lệnh thật
+
+- Chỉ tín hiệu nến đóng mới trên Binance, không qua bộ lọc lịch sử 80% để ép xác suất thắng. Tín hiệu/bid-ask phải còn mới; giá lệch >0,3% hoặc spread >0,1% bị bỏ qua.
+- Entry là MARKET qua `/fapi/v1/order`. Sau xác nhận khớp, bot gửi riêng **STOP_MARKET** và **TAKE_PROFIT_MARKET** Close-All qua **`/fapi/v1/algoOrder`** (Algo API hiện tại), SL trước, rồi kiểm tra client ID, phía lệnh, mức trigger, working type và trạng thái trên sàn. Trigger dùng CONTRACT_PRICE, chốt toàn bộ tại TP1/SL; chưa chia TP2/dời SL hoặc thoát theo thời gian.
+- **Entry và SL/TP không nguyên tử**: có khoảng chưa được bảo vệ, kéo dài nếu mạng/API lỗi. Nếu không xác nhận được SL/TP, bot yêu cầu đóng **reduce-only** rồi khóa mở thêm. Lệnh đóng cũng có thể thất bại/không được xác nhận; khi đó phải kiểm tra/đóng trực tiếp trên Binance. Bot không đảm bảo đã thoát chỉ vì gửi yêu cầu.
+- Client ID xác định và ý định entry/algo/đóng được ghi trước mỗi lần gửi. Entry POST không bao giờ được tự gửi lại sau timeout. Bot query ID để đối chiếu, vẫn kiểm tra/hoàn thiện bảo vệ vị thế đã khớp khi đang HALTED; khớp một phần yêu cầu hủy phần chưa khớp và đóng phần vị thế thực tế. Lệnh đóng chưa chắc chắn không được tự gửi lại.
+- Khi vị thế đóng, bot chỉ hủy SL/TP thuộc client ID của chính nó, không hủy lệnh của người khác. SL/TP ở sàn vẫn tồn tại khi bot/Render dừng. Theo dõi trực tiếp tài khoản; bot chỉ poll tài khoản mỗi 5 giây.
+- Sổ thực nằm ở `LIVE_DATA_DIR/binance-live.json`. SQLite OS lock trong cùng thư mục ngăn hai tiến trình dùng chung sổ, tự nhả khi crash; vẫn phải dùng một Render instance và không chạy bản khác với thư mục khác trên cùng tài khoản. Không xóa disk/sổ để bỏ qua trạng thái chưa xác định. Thay API key cần đối chiếu và chuyển nhật ký vì sổ gắn với hash của key, không lưu key/secret.
+
+Nút **Dừng mở lệnh thật** chỉ tạm dừng entry; vẫn theo dõi vị thế/bảo vệ. Nút tiếp tục không xóa khóa HALTED. Khi HALTED, kiểm tra client ID và trạng thái Binance; chỉ khôi phục sổ sau khi đã đối chiếu bằng người hiểu code. Đừng đổi sang chế độ mô phỏng hoặc xóa journal để ép mở lệnh lại.
+
+**Kiểm chứng:** API ký HMAC-SHA256, allowlist endpoint, cờ chỉ đọc, giới hạn vốn, filters, timeout/restart, SL/TP, partial fill, reduce-only close, daily loss và đăng nhập dashboard được kiểm thử bằng API giả lập. Không có giao dịch tiền thật nào được đặt trong quá trình phát triển. Máy phát triển bị Binance HTTP 451, nên **chưa xác minh authenticated order/fill/Algo API trên Binance thật**; kiểm thử phần mềm không chứng minh hiệu quả hoặc bảo đảm an toàn vốn.
+
+Tài liệu API đã đối chiếu: [Account V3 / Account Configuration](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Account-Information-V3), [New Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Order), [New Algo Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order).
 
 ## Mô phỏng bằng giá thật từ API Binance — không cần API key
 
@@ -62,7 +110,7 @@ Chế độ `okx:demo` dưới đây là tùy chọn riêng để gửi lệnh t
 
 ## Mới: tự giao dịch trên tài khoản OKX Demo
 
-`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (tự giao dịch minh họa ngay trong sổ ảo cục bộ). Không có chế độ đặt lệnh tiền thật.
+`npm run okx:demo` thêm khả năng **đặt lệnh thực sự trong môi trường Demo của OKX bằng tiền ảo**. Khác với `npm run demo` (tự giao dịch minh họa ngay trong sổ ảo cục bộ). Riêng chế độ OKX này không đặt lệnh tiền thật; Binance tiền thật là chế độ tách biệt ở đầu tài liệu.
 
 ### Bắt đầu trong Codespaces
 

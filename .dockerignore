@@ -7,6 +7,9 @@ node_modules
 .env.*
 data
 demo-data
+paper-data
+live-data
 *.log
 work
 test
+
