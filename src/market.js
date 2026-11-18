@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import { ProxyAgent } from 'proxy-agent';
 import { INTERVALS } from './config.js';
-import { RestQueue } from './provider-health.js';
+import { RestQueue, retryAfterMs } from './provider-health.js';
 
 const ROOT = { binance: 'https://fapi.binance.com', bybit: 'https://api.bybit.com', okx: 'https://www.okx.com' };
 const BYBIT_TF = { '5m': '5', '15m': '15', '1h': '60', '4h': '240' };
@@ -17,16 +17,18 @@ export async function getJson(url, fetcher = fetch, now = Date.now()) {
     const reason = [403, 451].includes(response.status) ? ' Dịch vụ giới hạn quyền truy cập hoặc khu vực.' : response.status === 418 ? ' Sàn tạm khóa IP; dừng gọi API đến khi hết thời hạn.' : response.status === 429 ? ' Quá giới hạn yêu cầu; đang chờ trước khi thử lại.' : '';
     const error = new Error(`Market API HTTP ${response.status}.${reason}`);
     error.httpStatus = response.status;
-    const retry = response.headers.get('retry-after');
-    const headerWait = retry ? (/^\d+$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry) - now) : 0;
-    const match = body.match(/(?:banned|ban)[\s\S]{0,80}?until\s+(\d{10,16})/i);
-    const ban = match ? Number(match[1]) * (match[1].length <= 10 ? 1000 : 1) : 0;
-    error.retryAfterMs = Math.max(0, Number.isFinite(headerWait) ? headerWait : 0, ban - now,
-      response.status === 418 && !retry && !match ? 3600000 : 0, response.status === 429 && !retry ? 60000 : 0);
+    error.retryAfterMs = retryAfterMs(response, body, now);
     error.retryAt = now + error.retryAfterMs;
     throw error;
   }
   let json; try { json = await response.json(); } catch { const e = new Error('Nguồn giá trả dữ liệu không hợp lệ.'); e.httpStatus = 502; throw e; }
+  if (Number(json.code) === -1003) {
+    const e = new Error('Binance yêu cầu dừng gọi API do giới hạn tần suất/IP.');
+    const body = JSON.stringify(json);
+    e.httpStatus = /\bban(?:ned)?\b/i.test(body) ? 418 : 429;
+    e.retryAfterMs = Math.max(retryAfterMs(response, body, now), e.httpStatus === 418 ? 3600000 : 60000);
+    e.retryAt = now + e.retryAfterMs; throw e;
+  }
   if (json.retCode !== undefined && json.retCode !== 0) throw new Error(`Bybit API code ${json.retCode}`);
   if (json.code !== undefined && String(json.code) !== '0') {
     const e = new Error(`OKX API code ${json.code}`);
