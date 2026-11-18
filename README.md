@@ -4,6 +4,8 @@
 
 Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.
 
+**Bản sửa chờ khóa Binance nằm ở nhánh `codex/binance-shared-cooldown`.** Nhánh này được tạo riêng để không tự redeploy dịch vụ đang bị khóa. Nếu đang gặp HTTP 418: tạm Suspend Service, đặt `BINANCE_RETRY_NOT_BEFORE` đúng mốc đang hiển thị và giữ `BINANCE_LIVE_ENABLED=false`, rồi chọn nhánh này trong Render Settings trước khi Resume/Deploy. Biến môi trường giữ hạn chờ qua redeploy ngay cả khi file dữ liệu tạm bị mất. Persistent Disk vẫn cần để giữ nhật ký, cấu hình và hạn khóa mới nhận sau đó; tiền thật vẫn nằm trên Binance.
+
 ### Bảng điều khiển BTC/ETH và TP/CL
 
 Giao diện mới có hai phần: **Cấu hình lệnh mới** và **Điều khiển bot**. Chọn một cặp **BTC/USDT** hoặc **ETH/USDT**, chọn cách đặt chốt lời/cắt lỗ, rồi bấm **Lưu cấu hình**:
@@ -22,7 +24,7 @@ Form giữ nguyên dữ liệu đang nhập khi polling; phải lưu/hủy thay 
 
 ### Thiết lập Render
 
-1. Dùng nhánh **`codex/okx-demo-autotrade`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
+1. Dùng nhánh **`codex/binance-shared-cooldown`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
 2. Nếu dùng dịch vụ Docker hiện có, chọn nhánh trên và xóa Docker Command override cũ (nếu có), để dùng CMD của Dockerfile. Gắn Persistent Disk tại `/var/data`; đặt Health Check Path là **`/healthz`**. Trong **Environment**, điền:
 
 ```env
@@ -55,7 +57,7 @@ Không điền `PORT`: Render tự cấp. Không đưa key/secret vào GitHub/ch
 - Entry là MARKET qua `/fapi/v1/order`. Sau xác nhận khớp, bot gửi riêng **STOP_MARKET** và **TAKE_PROFIT_MARKET** Close-All qua **`/fapi/v1/algoOrder`** (Algo API hiện tại), SL trước, rồi kiểm tra client ID, phía lệnh, mức trigger, working type và trạng thái trên sàn. Trigger dùng CONTRACT_PRICE, chốt toàn bộ tại TP1/SL; chưa chia TP2/dời SL hoặc thoát theo thời gian.
 - **Entry và SL/TP không nguyên tử**: có khoảng chưa được bảo vệ, kéo dài nếu mạng/API lỗi. Nếu không xác nhận được SL/TP, bot yêu cầu đóng **reduce-only** rồi khóa mở thêm. Lệnh đóng cũng có thể thất bại/không được xác nhận; khi đó phải kiểm tra/đóng trực tiếp trên Binance. Bot không đảm bảo đã thoát chỉ vì gửi yêu cầu.
 - Client ID xác định và ý định entry/algo/đóng được ghi trước mỗi lần gửi. Entry POST không bao giờ được tự gửi lại sau timeout. Bot query ID để đối chiếu, vẫn kiểm tra/hoàn thiện bảo vệ vị thế đã khớp khi đang HALTED; khớp một phần yêu cầu hủy phần chưa khớp và đóng phần vị thế thực tế. Lệnh đóng chưa chắc chắn không được tự gửi lại.
-- Khi vị thế đóng, bot chỉ hủy SL/TP thuộc client ID của chính nó, không hủy lệnh của người khác. SL/TP ở sàn vẫn tồn tại khi bot/Render dừng. Theo dõi trực tiếp tài khoản; bot chỉ poll tài khoản mỗi 5 giây.
+- Khi vị thế đóng, bot chỉ hủy SL/TP thuộc client ID của chính nó, không hủy lệnh của người khác. SL/TP ở sàn vẫn tồn tại khi bot/Render dừng. Tài khoản được poll mỗi 5 giây khi giao dịch đang bật hoặc còn vị thế/lệnh cần quản lý; khi chỉ đọc/tắt và không quản lý vị thế, chu kỳ là 60 giây. Trong hạn khóa Binance, mọi REST request đều phải chờ.
 - Sổ thực nằm ở `LIVE_DATA_DIR/binance-live.json`. SQLite OS lock trong cùng thư mục ngăn hai tiến trình dùng chung sổ, tự nhả khi crash; vẫn phải dùng một Render instance và không chạy bản khác với thư mục khác trên cùng tài khoản. Không xóa disk/sổ để bỏ qua trạng thái chưa xác định. Thay API key cần đối chiếu và chuyển nhật ký vì sổ gắn với hash của key, không lưu key/secret.
 
 Nút **Dừng mở lệnh thật** chỉ tạm dừng entry; vẫn theo dõi vị thế/bảo vệ. Nút tiếp tục không xóa khóa HALTED. Khi HALTED, kiểm tra client ID và trạng thái Binance; chỉ khôi phục sổ sau khi đã đối chiếu bằng người hiểu code. Đừng đổi sang chế độ mô phỏng hoặc xóa journal để ép mở lệnh lại.
@@ -69,7 +71,7 @@ Tài liệu API đã đối chiếu: [Account V3 / Account Configuration](https:
 Trong Terminal Codespaces đang ở nhánh nâng cấp, dừng bot cũ bằng **Ctrl+C**, sau đó chạy:
 
 ```bash
-git pull --ff-only origin codex/okx-demo-autotrade
+git pull --ff-only origin codex/binance-shared-cooldown
 HOST=0.0.0.0 PORT=8787 npm run paper:binance
 ```
 
@@ -95,6 +97,20 @@ Tài liệu: [Binance Futures — Order Book Ticker](https://developers.binance.
 
 Terminal ghi các lần đổi trạng thái `SYNCING`, `STREAMING`, `RETRYING`, `BLOCKED` và lỗi báo giá. Khi báo sự cố, gửi dòng lỗi cuối/ảnh Terminal cùng ảnh dashboard để phân biệt tiến trình dừng, lỗi chuyển tiếp cổng, lỗi giao diện hay nguồn giá. Không gửi API key.
 
+### HTTP 418 tiếp tục kéo dài sau mốc chờ cũ
+
+418 là khóa IP/tần suất, khác lỗi API key không có quyền giao dịch. Thời điểm trên dashboard là hạn đang được lưu từ phản hồi Binance, không phải cam kết sàn sẽ mở đúng lúc; Binance có thể trả hạn mới. IP Render có thể dùng chung với dịch vụ khác, nên không xác định được tác nhân gây khóa chỉ từ màn hình.
+
+Code hiện chia sẻ `provider-backoff-binance.json` giữa luồng thị trường và luồng tài khoản có ký API. Cả hai đọc thời hạn trước mỗi REST request; luồng tài khoản cũng đọc `banned until` trong body, không chỉ Retry-After. Phản hồi lỗi HTML/non-JSON hoặc mã -1003 vẫn kích hoạt chờ. Hạn dài hơn luôn được giữ. Restart với disk bền vững không làm mất thời hạn này; **tắt giao dịch chỉ dừng entry, không có nghĩa ngừng mọi lần đọc tài khoản**.
+
+Nếu dùng Free/không có Persistent Disk, redeploy có thể mất file chờ. Để giữ một hạn khóa đã biết ngay cả khi thư mục dữ liệu tạm bị thay mới, thêm biến Render **trước khi chạy bản cập nhật**:
+
+```env
+BINANCE_RETRY_NOT_BEFORE=2026-11-20T08:51:56+07:00
+```
+
+Đây là ví dụ mốc 08:51:56 ngày 20/11/2026 theo giờ Việt Nam; điền mốc thực tế Binance đang báo cho máy chủ của bạn. Biến chỉ trì hoãn yêu cầu, không rút ngắn khóa dài hơn đã lưu, không đổi IP và không gỡ khóa. Sau khi mốc này đã qua, nó không tự tạo thêm khóa; lần thử kế tiếp vẫn có thể bị Binance từ chối. Không xóa backoff hoặc gọi thử liên tục trong thời gian chờ. Kiểm thử của bản sửa dùng phản hồi giả lập, không gọi Binance đang bị khóa để thử.
+
 ## Demo tự trading ngay — không tài khoản, không API key
 
 Dùng lệnh này để xem bot tự mua/bán bằng tiền ảo ngay trên dashboard:
@@ -110,7 +126,7 @@ Mở cổng **8787**. Bot có sẵn **10.000 USDT ảo**, mở giao dịch đầ
 Nếu bạn đang ở nhánh nâng cấp trong Codespaces, dừng bot cũ bằng **Ctrl+C**, rồi cập nhật và chạy:
 
 ```bash
-git pull --ff-only origin codex/okx-demo-autotrade
+git pull --ff-only origin codex/binance-shared-cooldown
 HOST=0.0.0.0 PORT=8787 npm run demo
 ```
 

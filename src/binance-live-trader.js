@@ -18,6 +18,10 @@ export function liveOptions(env = process.env) {
 export function liveLimits(options, equity) {
   return { notional: Math.min(options.maxNotional, equity * 0.05), risk: Math.min(options.maxRisk, equity * 0.0025), daily: Math.min(options.maxDailyLoss, equity * 0.01) };
 }
+export function accountPollMs(trader) {
+  const managing = trader.positions.length || trader.state.entries.some(e => !['CLOSED', 'REJECTED'].includes(e.status));
+  return managing || (trader.options.enabled && !trader.state.paused && !trader.state.halt) ? 5000 : 60000;
+}
 export function planLiveOrder(signal, spec, quote, options, equity, now, controls) {
   if (signal.exchange !== 'binance' || signal.layer !== 'CLOSED' || !signal.closed || !['LONG', 'SHORT'].includes(signal.side) ||
       !Number.isFinite(signal.candleEndTime) || now - signal.candleEndTime > 60000 || signal.candleEndTime > now ||
@@ -51,7 +55,7 @@ export function planLiveOrder(signal, spec, quote, options, equity, now, control
 
 export class BinanceLiveTrader {
   constructor(cfg, options, { api, now = Date.now } = {}) {
-    this.cfg = cfg; this.options = options; this.now = now; this.api = api || new BinanceLiveApi(options, { now });
+    this.cfg = cfg; this.options = options; this.now = now; this.api = api || new BinanceLiveApi(options, { now, backoffCfg: { ...cfg, exchange: 'binance' } });
     fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 });
     this.file = path.join(cfg.dataDir, 'binance-live.json');
     this.state = fs.existsSync(this.file) ? JSON.parse(fs.readFileSync(this.file, 'utf8')) : { version: 1, entries: [], day: null, baseline: null, halt: null, paused: false };
