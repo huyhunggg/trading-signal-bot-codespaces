@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { readBackoff, saveBackoff, retryAfterMs } from './provider-health.js';
+import { readBackoff, saveBackoff, retryAfterMs, requestsPaused } from './provider-health.js';
 
 const ROOT = 'https://fapi.binance.com';
 const READS = new Set(['/fapi/v3/account', '/fapi/v3/positionRisk', '/fapi/v1/accountConfig', '/fapi/v1/symbolConfig', '/fapi/v1/openOrders', '/fapi/v1/openAlgoOrders', '/fapi/v1/order', '/fapi/v1/algoOrder']);
@@ -16,7 +16,7 @@ export class BinanceLiveApi {
     if (!this.key || !this.secret) throw new Error('MISSING_BINANCE_KEYS');
     const saved = this.backoffCfg ? readBackoff(this.backoffCfg) : null;
     this.retryAt = Math.max(this.retryAt, saved?.retryAt || 0);
-    if (this.now() < this.retryAt) {
+    if (this.now() < this.retryAt || requestsPaused(saved, this.now())) {
       const e = new Error('BINANCE_COOLDOWN'); e.cooldown = true; e.retryAt = this.retryAt;
       e.httpStatus = saved?.httpStatus || 418; throw e;
     }
@@ -40,6 +40,7 @@ export class BinanceLiveApi {
       if (code === -1003 && ![418, 429].includes(response.status)) e.httpStatus = /\bban(?:ned)?\b/i.test(text) ? 418 : 429;
       e.uncertain = response.status >= 500 || [-1006, -1007].includes(code);
       if ([403, 418, 429, 451].includes(e.httpStatus)) {
+        e.requestKind = 'account';
         const now = this.now();
         e.retryAfterMs = Math.max(retryAfterMs(response, text, now), e.httpStatus === 429 ? 60000 : 3600000);
         e.retryAt = now + e.retryAfterMs;

@@ -10,7 +10,7 @@ export async function pollLatest(market, engine, cfg, now) {
 
 // REST bootstrap proceeds even when WebSocket is unavailable. A read-only REST
 // snapshot remains a usable, explicitly slower transport, not synthetic prices.
-export async function runLiveSession({ cfg, market, engine, serverTime, now, signal, onStatus, onReady }) {
+export async function runLiveSession({ cfg, market, engine, serverTime, now, signal, onStatus, onReady, checkConnection }) {
   let socket, ready = false, wsOpen = false, wsBroken = false, pendingError = null, transport = 'PENDING';
   const buffered = [], seen = new Map(), allTfs = [...new Set([cfg.htf, ...cfg.timeframes])];
   const ingest = events => {
@@ -50,6 +50,7 @@ export async function runLiveSession({ cfg, market, engine, serverTime, now, sig
       message: transport === 'REST_POLL' ? `WebSocket chưa khả dụng. Đang lấy giá thật qua REST, chu kỳ mục tiêu ${cfg.pollIntervalMs / 1000} giây.` : null });
     publish(); onReady();
     while (!signal.aborted && Date.now() - connectedAt < 12 * 3600000) {
+      checkConnection?.();
       if (pendingError) throw pendingError;
       if (transport === 'WEBSOCKET' && (wsBroken || cfg.symbols.some(s => allTfs.some(tf => Date.now() - (seen.get(`${s}:${tf}`) || connectedAt) > cfg.streamStaleMs)))) {
         transport = 'REST_POLL'; socket?.terminate(); publish();
@@ -60,3 +61,4 @@ export async function runLiveSession({ cfg, market, engine, serverTime, now, sig
     }
   } finally { ready = false; socket?.terminate(); }
 }
+

@@ -3,7 +3,7 @@ services:
     name: binance-trading-bot
     runtime: docker
     plan: starter
-    branch: codex/binance-shared-cooldown
+    branch: codex/binance-manual-recovery
     healthCheckPath: /healthz
     numInstances: 1
     disk:

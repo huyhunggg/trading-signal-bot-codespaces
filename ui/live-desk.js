@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const number = n => Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 4 }) : '—';
 const date = t => new Date(t).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
 let latest, applySnapshot, bound = false, shown = false, dirty = false, saving = false, toggling = false, stale = false, formRevision = null;
+let checking = false;
 
 export function parseExitDraft(mode, tp, sl) {
   if (mode === 'strategy') return {};
@@ -57,7 +58,7 @@ function updateDraft() {
     } catch { /* Keep the input help while the user is typing. */ }
   }
   $('live-exit-preview').textContent = preview;
-  $('live-resume').disabled = stale || toggling || dirty || saving || !t.enabled || t.halted || !t.controls;
+  $('live-resume').disabled = stale || toggling || dirty || saving || !t.enabled || t.halted || !t.controls || !!latest.status.recoveryRequired;
   $('live-pause').disabled = toggling || t.paused;
 }
 async function post(url, body = {}) {
@@ -105,6 +106,17 @@ export function bindLiveDesk(onSnapshot) {
     } catch (e) { $('live-action-result').textContent = e.message; }
     finally { toggling = false; updateDraft(); }
   });
+  $('live-check-connection').addEventListener('click', async () => {
+    if (checking) return;
+    const button = $('live-check-connection');
+    checking = true; button.disabled = true;
+    $('live-check-result').textContent = 'Đang kiểm tra…';
+    try {
+      applySnapshot(await post('/api/live/check-connection'));
+      $('live-check-result').textContent = 'API công khai đã phản hồi. Đang đồng bộ giá và kiểm tra tài khoản.';
+    } catch (e) { $('live-check-result').textContent = e.message; }
+    finally { checking = false; }
+  });
 }
 export function renderLiveDesk(t, snapshot) {
   latest = snapshot; stale = false;
@@ -123,7 +135,9 @@ export function renderLiveDesk(t, snapshot) {
   $('live-saved-exits').textContent = !c ? 'Chờ cấu hình từ máy chủ.' : c.mode === 'strategy' ? 'TP/CL theo chiến lược' : c.mode === 'percent' ? `TP ${c.tpPercent}% · CL ${c.slPercent}%` : `TP ${number(c.tpPrice)} · CL ${number(c.slPrice)} USDT`;
   const health = snapshot.sources?.find(s => s.exchange === 'binance');
   const retryAt = Math.max(snapshot.status.retryAt || 0, health?.retryAt || 0, t.accountRetryAt || 0);
-  const blocked = snapshot.status.phase === 'BLOCKED' || retryAt > snapshot.serverNow;
+  const recoveryRequired = !!snapshot.status.recoveryRequired;
+  const waiting = retryAt > snapshot.serverNow;
+  const blocked = snapshot.status.phase === 'BLOCKED' || waiting;
   const on = t.enabled && !t.paused && !t.halted;
   $('live-power-label').textContent = t.halted ? 'Đã khóa mở lệnh' : !t.enabled ? 'Chưa cấp quyền giao dịch' : on ? 'Đang bật' : 'Đang tắt';
   $('live-power-description').textContent = on ? (blocked ? 'Chờ Binance mở truy cập' : 'Chờ tín hiệu đủ điều kiện') : 'Không mở vị thế mới';
@@ -132,10 +146,22 @@ export function renderLiveDesk(t, snapshot) {
   $('live-power-hint').textContent = t.halted ? 'Có lỗi cần kiểm tra trên Binance. Bật lại không xóa khóa HALTED.' : !t.enabled ? 'Đặt BINANCE_LIVE_ENABLED=true trong Render để cấp quyền cho nút Bật. Cấu hình TP/CL vẫn lưu được ngay.' : 'Tắt chỉ dừng mở thêm. Lệnh đã gửi có thể hoàn tất; vị thế đang mở vẫn giữ SL/TP trên sàn.';
   const card = $('live-connection-card');
   card.dataset.state = blocked ? 'blocked' : snapshot.status.phase === 'STREAMING' ? 'online' : 'waiting';
-  $('live-connection-title').textContent = blocked ? `Tạm dừng truy cập${health?.httpStatus ? ' · HTTP ' + health.httpStatus : ''}` : snapshot.status.phase === 'STREAMING' ? 'Đã kết nối giá thị trường' : 'Đang chờ nguồn giá';
-  $('live-connection-detail').textContent = blocked ? `Binance đang giới hạn máy chủ. ${retryAt ? 'Thử lại sau ' + date(retryAt) + ' (UTC+7).' : ''} Bạn vẫn có thể lưu cấu hình.` : t.status === 'ERROR' || t.status === 'NEED_KEYS' ? t.reason : 'Bot chỉ mở lệnh khi dữ liệu mới và tài khoản sẵn sàng.';
+  const code = snapshot.status.httpStatus || health?.httpStatus;
+  $('live-connection-title').textContent = blocked ? `Tạm dừng truy cập${code ? ' · HTTP ' + code : ''}` : snapshot.status.phase === 'STREAMING' ? 'Đã kết nối giá thị trường' : 'Đang chờ nguồn giá';
+  if (snapshot.status.configuredDeadline) $('live-connection-title').textContent = 'Đang giữ hạn chờ đã lưu';
+  if (recoveryRequired) {
+    $('live-connection-detail').textContent = waiting
+      ? `Bot đã dừng gọi API. Có thể kiểm tra kết nối sau ${date(retryAt)} (UTC+7).`
+      : 'Đã hết hạn chờ. Bấm kiểm tra để gửi một yêu cầu đọc tới Binance.';
+  } else {
+    $('live-connection-detail').textContent = blocked ? `Binance đang giới hạn máy chủ. ${retryAt ? 'Thử lại sau ' + date(retryAt) + ' (UTC+7).' : ''}` : t.status === 'ERROR' || t.status === 'NEED_KEYS' ? t.reason : 'Bot chỉ mở lệnh khi dữ liệu mới và tài khoản sẵn sàng.';
+  }
   const seconds = Math.max(0, Math.ceil((retryAt - snapshot.serverNow) / 1000));
-  $('live-retry-countdown').textContent = seconds ? `Còn ${Math.floor(seconds / 3600)} giờ ${Math.floor(seconds % 3600 / 60)} phút ${seconds % 60} giây · Bật bot không bỏ qua thời gian chờ.` : '';
+  $('live-retry-countdown').textContent = seconds ? `Còn ${Math.floor(seconds / 3600)} giờ ${Math.floor(seconds % 3600 / 60)} phút ${seconds % 60} giây.` : '';
+  const check = $('live-check-connection');
+  check.hidden = !recoveryRequired;
+  check.disabled = waiting || checking || snapshot.status.checkingConnection || t.enabled;
+  if (recoveryRequired && t.enabled && !checking) $('live-check-result').textContent = 'Đặt BINANCE_LIVE_ENABLED=false trên Render để kiểm tra ở chế độ chỉ đọc.';
   $('trading-title').textContent = 'Trạm giao dịch · Tiền thật';
   $('trading-status').textContent = t.halted ? 'Cần kiểm tra' : blocked ? 'Binance đang giới hạn' : t.paused ? 'Đã tắt mở lệnh' : !t.enabled ? 'Chế độ chỉ đọc' : t.status === 'READY' ? 'Sẵn sàng · chờ tín hiệu' : t.status === 'POSITION_OPEN' ? 'Đang theo dõi vị thế' : 'Chưa sẵn sàng';
   if (t.paused && !t.halted) $('trading-reason').textContent = 'Đã tắt mở vị thế mới. Cấu hình vẫn lưu được; vị thế hiện có tiếp tục được đối chiếu khi API truy cập được.';
@@ -150,5 +176,6 @@ export function markDeskStale() {
   $('live-connection-detail').textContent = 'Trạng thái bên dưới là dữ liệu cũ. Bot có thể vẫn chạy; cần kết nối lại để xác nhận.';
   $('live-connection-card').dataset.state = 'waiting';
   $('live-resume').disabled = true; $('live-settings-save').disabled = true;
+  $('live-check-connection').disabled = true;
   $('live-power-description').textContent = 'Chưa xác nhận trạng thái hiện tại';
 }

@@ -4,7 +4,7 @@
 
 Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.
 
-**Bản sửa chờ khóa Binance nằm ở nhánh `codex/binance-shared-cooldown`.** Nhánh này được tạo riêng để không tự redeploy dịch vụ đang bị khóa. Nếu đang gặp HTTP 418: tạm Suspend Service, đặt `BINANCE_RETRY_NOT_BEFORE` đúng mốc đang hiển thị và giữ `BINANCE_LIVE_ENABLED=false`, rồi chọn nhánh này trong Render Settings trước khi Resume/Deploy. Biến môi trường giữ hạn chờ qua redeploy ngay cả khi file dữ liệu tạm bị mất. Persistent Disk vẫn cần để giữ nhật ký, cấu hình và hạn khóa mới nhận sau đó; tiền thật vẫn nằm trên Binance.
+**Bản xử lý HTTP 418 nằm ở nhánh `codex/binance-manual-recovery`.** Nếu Render đang gặp HTTP 418, lưu `BINANCE_RETRY_NOT_BEFORE` theo mốc muộn nhất đang hiển thị và giữ `BINANCE_LIVE_ENABLED=false` trước khi chuyển nhánh và deploy. Có thể chọn **Save only** ở Environment để lưu mà chưa deploy. Nếu Render không có Persistent Disk, biến môi trường giữ mốc chờ đã biết qua redeploy. Persistent Disk giữ thêm nhật ký, cấu hình và các hạn mới nhận sau đó.
 
 ### Bảng điều khiển BTC/ETH và TP/CL
 
@@ -24,7 +24,7 @@ Form giữ nguyên dữ liệu đang nhập khi polling; phải lưu/hủy thay 
 
 ### Thiết lập Render
 
-1. Dùng nhánh **`codex/binance-shared-cooldown`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
+1. Dùng nhánh **`codex/binance-manual-recovery`**. Có thể tạo Render Blueprint từ `render.yaml`: một Docker Web Service gói **Starter trả phí**, một instance và disk 1 GB gắn `/var/data`. Chưa có dịch vụ nào được triển khai tự động từ thay đổi code này.
 2. Nếu dùng dịch vụ Docker hiện có, chọn nhánh trên và xóa Docker Command override cũ (nếu có), để dùng CMD của Dockerfile. Gắn Persistent Disk tại `/var/data`; đặt Health Check Path là **`/healthz`**. Trong **Environment**, điền:
 
 ```env
@@ -106,10 +106,10 @@ Code hiện chia sẻ `provider-backoff-binance.json` giữa luồng thị trư�
 Nếu dùng Free/không có Persistent Disk, redeploy có thể mất file chờ. Để giữ một hạn khóa đã biết ngay cả khi thư mục dữ liệu tạm bị thay mới, thêm biến Render **trước khi chạy bản cập nhật**:
 
 ```env
-BINANCE_RETRY_NOT_BEFORE=2026-11-20T08:51:56+07:00
+BINANCE_RETRY_NOT_BEFORE=2026-11-22T10:34:00+07:00
 ```
 
-Đây là ví dụ mốc 08:51:56 ngày 20/11/2026 theo giờ Việt Nam; điền mốc thực tế Binance đang báo cho máy chủ của bạn. Biến chỉ trì hoãn yêu cầu, không rút ngắn khóa dài hơn đã lưu, không đổi IP và không gỡ khóa. Sau khi mốc này đã qua, nó không tự tạo thêm khóa; lần thử kế tiếp vẫn có thể bị Binance từ chối. Không xóa backoff hoặc gọi thử liên tục trong thời gian chờ. Kiểm thử của bản sửa dùng phản hồi giả lập, không gọi Binance đang bị khóa để thử.
+Đây là ví dụ mốc 10:34 ngày 22/11/2026 theo giờ Việt Nam. Điền mốc muộn nhất Binance đang báo. Sau HTTP 418, bot ngừng gọi REST và đợi người dùng kiểm tra kết nối ngay cả khi đã hết hạn. Giữ chế độ chỉ đọc và bấm **Kiểm tra kết nối Binance** trên dashboard sau mốc chờ. Bot gửi một yêu cầu công khai để kiểm tra, rồi đồng bộ giá và tài khoản nếu thành công. Nếu Binance vẫn từ chối, ứng dụng lưu hạn mới và dừng. Liên hệ hỗ trợ Binance nếu IP Render tiếp tục bị từ chối. Không xóa backoff hoặc kiểm tra liên tục.
 
 ## Demo tự trading ngay — không tài khoản, không API key
 

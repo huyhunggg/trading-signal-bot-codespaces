@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BinanceLiveApi } from '../src/binance-live-api.js';
-import { RestQueue, readBackoff, saveBackoff, seedBackoff } from '../src/provider-health.js';
+import { RestQueue, readBackoff, saveBackoff, seedBackoff, markRecovery } from '../src/provider-health.js';
 import { accountPollMs } from '../src/binance-live-trader.js';
 import { getJson } from '../src/market.js';
 import { spawn } from 'node:child_process';
@@ -72,6 +72,21 @@ test('signed retry resumes only at or after the longest saved deadline, with no 
   now = until - 1; await assert.rejects(api.get('/fapi/v3/account'), /COOLDOWN/); assert.equal(calls, 0);
   now = until; await api.get('/fapi/v3/account'); assert.equal(calls, 1);
 });
+
+test('live-mode 418 still blocks both clients after expiry and restart until a connection check clears the hold', async t => {
+  const cfg = { ...setup(t), manualBanRecovery: true };
+  const now = Date.now();
+  saveBackoff(cfg, Object.assign(new Error('HTTP 418'), { httpStatus: 418 }), now - 7200000);
+  let calls = 0;
+  const api = new BinanceLiveApi(options, { backoffCfg: cfg, fetcher: async () => { calls++; return new Response('{}'); } });
+  const market = new RestQueue(cfg, async () => { calls++; return {}; });
+  await assert.rejects(api.get('/fapi/v3/account'), /COOLDOWN/);
+  await assert.rejects(market.get('unused'), e => e.cooldown === true);
+  assert.equal(calls, 0);
+  markRecovery(cfg, false);
+  await api.get('/fapi/v3/account'); await market.get('unused');
+  assert.equal(calls, 2);
+});
 test('account standby uses 60 seconds, while active trading or existing positions retain 5-second management', () => {
   const trader = { positions: [], options: { enabled: false }, state: { entries: [], paused: true, halt: null } };
   assert.equal(accountPollMs(trader), 60000);
@@ -124,4 +139,42 @@ test('real runner with a pinned deadline makes zero public/private requests, inc
       assert.equal(fs.existsSync(trace), false, logs); assert.equal(readBackoff({ ...cfg }).retryAt, until);
     } finally { if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; } }
   }
+});
+
+test('dashboard recovery after expiry sends one public read and stores the new 418 deadline without repeated requests', { timeout: 12000 }, async t => {
+  const cfg = setup(t), trace = path.join(cfg.dataDir, 'trace.txt'), preload = path.join(cfg.dataDir, 'preload.mjs');
+  const until = Date.now() + 36 * 3600000;
+  fs.writeFileSync(preload, `import fs from 'node:fs';
+    globalThis.fetch = async (url, opts) => {
+      fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({url, auth: !!opts.headers}) + '\\n');
+      await new Promise(resolve => setTimeout(resolve, 150));
+      return new Response('IP banned until ${until}', { status: 418 });
+    };`);
+  const listener = net.createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
+  const port = listener.address().port; await new Promise(resolve => listener.close(resolve));
+  const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, 'src/binance-live-main.js'], {
+    cwd: new URL('..', import.meta.url), env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), LIVE_DATA_DIR: cfg.dataDir,
+      DASHBOARD_PASSWORD: 'testpass', BINANCE_API_KEY: 'FAKE_KEY', BINANCE_API_SECRET: 'FAKE_SECRET', BINANCE_LIVE_ENABLED: 'false',
+      BINANCE_RETRY_NOT_BEFORE: new Date(Date.now() - 60000).toISOString() },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let logs = ''; child.stdout.on('data', s => logs += s); child.stderr.on('data', s => logs += s);
+  t.after(async () => { if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; } });
+  const headers = { authorization: 'Basic ' + Buffer.from('bot:testpass').toString('base64'), 'content-type': 'application/json' };
+  const url = `http://127.0.0.1:${port}/api`; let state;
+  for (let i = 0; i < 50; i++) { try { state = await (await fetch(url + '/status', { headers })).json(); break; } catch { await delay(100); } }
+  assert.ok(state, logs); assert.equal(state.status.recoveryRequired, true); assert.ok(state.status.retryAt < Date.now());
+  await delay(1100);
+  assert.equal(fs.existsSync(trace), false, logs);
+  const check = () => fetch(url + '/live/check-connection', { method: 'POST', headers, body: '{}' });
+  const responses = await Promise.all([check(), check()]);
+  assert.deepEqual(responses.map(response => response.status), [409, 409]);
+  assert.equal((await check()).status, 409);
+  state = await (await fetch(url + '/status', { headers })).json();
+  assert.equal(state.status.retryAt, until);
+  assert.equal(state.status.recoveryRequired, true);
+  assert.equal(readBackoff(cfg).requestKind, 'connection-check');
+  assert.deepEqual(fs.readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse), [
+    { url: 'https://fapi.binance.com/fapi/v1/time', auth: false },
+  ]);
 });

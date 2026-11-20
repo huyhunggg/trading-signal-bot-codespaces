@@ -8,12 +8,13 @@ const BYBIT_TF = { '5m': '5', '15m': '15', '1h': '60', '4h': '240' };
 const OKX_TF = { '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H' };
 export const okxInstrument = symbol => symbol.replace(/USDT$/, '-USDT-SWAP');
 
-export async function getJson(url, fetcher = fetch, now = Date.now()) {
+export async function getJson(url, fetcher = fetch, now) {
   let response;
   try { response = await fetcher(url, { signal: AbortSignal.timeout(15_000) }); }
   catch { const e = new Error('Không kết nối được dịch vụ dữ liệu.'); e.network = true; throw e; }
   if (!response.ok) {
     let body = ''; try { body = (await response.text()).slice(0, 4096); } catch {}
+    now ??= Date.now();
     const reason = [403, 451].includes(response.status) ? ' Dịch vụ giới hạn quyền truy cập hoặc khu vực.' : response.status === 418 ? ' Sàn tạm khóa IP; dừng gọi API đến khi hết thời hạn.' : response.status === 429 ? ' Quá giới hạn yêu cầu; đang chờ trước khi thử lại.' : '';
     const error = new Error(`Market API HTTP ${response.status}.${reason}`);
     error.httpStatus = response.status;
@@ -23,6 +24,7 @@ export async function getJson(url, fetcher = fetch, now = Date.now()) {
   }
   let json; try { json = await response.json(); } catch { const e = new Error('Nguồn giá trả dữ liệu không hợp lệ.'); e.httpStatus = 502; throw e; }
   if (Number(json.code) === -1003) {
+    now ??= Date.now();
     const e = new Error('Binance yêu cầu dừng gọi API do giới hạn tần suất/IP.');
     const body = JSON.stringify(json);
     e.httpStatus = /\bban(?:ned)?\b/i.test(body) ? 418 : 429;

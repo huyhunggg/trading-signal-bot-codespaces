@@ -28,13 +28,15 @@ function render(s) {
   }
   const live = s.status.phase === 'STREAMING', demo = s.demo;
   $('connection').textContent = demo ? 'CHẾ ĐỘ MÔ PHỎNG' : s.status.phase === 'STREAMING' && s.status.transport === 'REST_POLL' ? 'Đang cập nhật giá qua REST' : ({ STREAMING: 'Đang nhận dữ liệu WebSocket', SELECTING: 'Đang chọn nguồn giá', CONNECTING: 'Đang kết nối', SYNCING: 'Đang đồng bộ lịch sử', RETRYING: 'Mất kết nối · đang thử lại', PAUSED: 'Đang chờ nguồn giá mở lại', BLOCKED: 'API từ chối truy cập · cần kiểm tra' }[s.status.phase] || s.status.phase);
+  if (s.status.recoveryRequired) $('connection').textContent = 'Đang tạm dừng kết nối Binance';
   $('dot').className = 'dot ' + (demo ? 'demo' : live ? 'online' : '');
   $('clock').textContent = date(s.serverNow) + ' UTC+7';
   $('source').textContent = `${s.exchange.toUpperCase()} · USDT perpetual · HTF ${s.htf}${s.status.transport === 'REST_POLL' ? ` · chu kỳ ${Math.round((s.status.pollIntervalMs || 5000) / 1000)}s` : ''}`;
   $('telegram').textContent = demo ? 'Telegram tắt trong chế độ mô phỏng' : !s.telegram.configured ? 'Telegram: chưa cấu hình' : s.telegram.lastError ? 'Telegram: lỗi gửi tin, đang thử lại' : s.telegram.lastSuccessAt ? `Telegram: gửi gần nhất ${date(s.telegram.lastSuccessAt)}` : 'Telegram: đã cấu hình · chờ tín hiệu đầu tiên';
   const notice = $('notice'); notice.hidden = !demo && live && !s.status.message;
   notice.className = 'notice' + (demo ? ' demo' : '');
-  notice.textContent = demo ? 'DỮ LIỆU TỔNG HỢP — Các giá và cảnh báo dưới đây chỉ minh họa phần mềm, không phải tín hiệu thị trường thật.' : (s.status.error || s.status.message || 'Chưa sẵn sàng phát tín hiệu. Bot đang kết nối và đồng bộ dữ liệu.') + (s.status.retryAt ? ' Thử lại sau ' + date(s.status.retryAt) + '.' : '');
+  const retry = s.status.retryAt > s.serverNow && !s.status.recoveryRequired ? ' Thử lại sau ' + date(s.status.retryAt) + '.' : '';
+  notice.textContent = demo ? 'DỮ LIỆU TỔNG HỢP — Các giá và cảnh báo dưới đây chỉ minh họa phần mềm, không phải tín hiệu thị trường thật.' : (s.status.error || s.status.message || 'Chưa sẵn sàng phát tín hiệu. Bot đang kết nối và đồng bộ dữ liệu.') + retry;
   $('source-health').textContent = (s.sources || []).filter(p => p.state).map(p => `${p.exchange.toUpperCase()}: ${p.state === 'AVAILABLE' ? (p.exchange === s.exchange ? 'đang dùng' : 'khả dụng') : `tạm dừng${p.httpStatus ? ' (HTTP ' + p.httpStatus + ')' : ''} đến ${date(p.retryAt)}`}`).join(' · ');
   $('coverage').textContent = `${s.symbols.length} cặp / ${s.timeframes.length} khung`;
   $('htf').textContent = `${s.timeframes.join(' + ')} · xác nhận ${s.htf} đã đóng`;
