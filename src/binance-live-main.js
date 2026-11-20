@@ -12,9 +12,11 @@ import { coolingError, markRecovery, readBackoff, requestsPaused, saveBackoff, s
 const cfg = loadConfig({ HOST: process.env.HOST, PORT: process.env.PORT, EXCHANGE: 'binance', DATA_SOURCE_MODE: 'fixed', SYMBOLS: 'BTCUSDT,ETHUSDT' });
 cfg.dataDir = process.env.LIVE_DATA_DIR || './live-data';
 cfg.manualBanRecovery = true;
+cfg.localPc = process.argv.includes('--local-pc');
 cfg.dashboardUser = process.env.DASHBOARD_USER || 'bot'; cfg.dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
 if (cfg.dashboardPassword.length < 8) throw new Error('Set DASHBOARD_PASSWORD to at least 8 characters before starting real-account mode');
 const trader = new BinanceLiveTrader(cfg, liveOptions()), sources = new SourceManager(cfg), abort = new AbortController();
+if (cfg.localPc) trader.pause();
 if (process.env.BINANCE_RETRY_NOT_BEFORE) {
   const until = Date.parse(process.env.BINANCE_RETRY_NOT_BEFORE);
   if (!Number.isFinite(until) || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(process.env.BINANCE_RETRY_NOT_BEFORE)) throw new Error('BINANCE_RETRY_NOT_BEFORE must be an ISO date with timezone');
@@ -43,7 +45,9 @@ async function checkBinanceConnection() {
   const state = readBackoff(cfg);
   if (!state?.manualRecovery || status.phase !== 'BLOCKED') throw controlError('Bot không ở trạng thái chờ kiểm tra Binance.', 409);
   if (state.retryAt > Date.now()) throw controlError('Chưa hết hạn Binance yêu cầu chờ.', 409);
-  if (trader.options.enabled) throw controlError('Đặt BINANCE_LIVE_ENABLED=false trước khi kiểm tra kết nối.', 409);
+  if (trader.options.enabled) throw controlError(cfg.localPc
+    ? 'Mở lại bot và chọn 1 (Chỉ đọc) trước khi kiểm tra kết nối.'
+    : 'Đặt BINANCE_LIVE_ENABLED=false trước khi kiểm tra kết nối.', 409);
   if (checkingConnection || trader.busy) throw controlError('Đang xử lý kết nối. Thử lại sau.', 409);
   checkingConnection = true;
   try {
@@ -67,7 +71,7 @@ async function checkBinanceConnection() {
 }
 
 const server = dashboard(cfg, () => ({
-  version: 'binance-live-4', demo: false, exchange: 'binance', sourceMode: 'fixed', sources: sources.snapshot(),
+  version: 'binance-live-4', demo: false, localPc: cfg.localPc, exchange: 'binance', sourceMode: 'fixed', sources: sources.snapshot(),
   symbols: cfg.symbols, timeframes: cfg.timeframes, htf: cfg.htf, pinbarEnabled: cfg.pinbarEnabled,
   serverNow: Date.now(), streamStaleMs: cfg.streamStaleMs, rows: [...(engine?.rows.values() || [])],
   status: { ...status, checkingConnection }, signals: [], candidates: [], trading: trader.snapshot(), validation: null,

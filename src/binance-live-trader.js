@@ -84,7 +84,9 @@ export class BinanceLiveTrader {
   stop() { this.stopped = true; this.pending = null; if (!this.busy) this.releaseLock(); }
   pause() { this.intentVersion++; this.pending = null; this.state.paused = true; this.save(); }
   resume() {
-    if (!this.options.enabled) throw controlError('Cần đặt BINANCE_LIVE_ENABLED=true trong Render trước khi bật trên giao diện.', 409);
+    if (!this.options.enabled) throw controlError(this.cfg.localPc
+      ? 'Mở lại bot và chọn 2 để cho phép giao dịch thật.'
+      : 'Cần đặt BINANCE_LIVE_ENABLED=true trong Render trước khi bật trên giao diện.', 409);
     if (this.state.halt) throw controlError('Bot đang khóa vì lỗi. Kiểm tra Binance; nút Bật không xóa khóa này.', 409);
     this.save({ ...this.state, paused: false });
     this.intentVersion++; this.pending = null; this.state.paused = false;
@@ -190,10 +192,20 @@ export class BinanceLiveTrader {
     if (this.busy || this.stopped) return;
     this.busy = true;
     try {
-      if (!this.options.key || !this.options.secret) { this.status = 'NEED_KEYS'; this.reason = 'Nhập BINANCE_API_KEY và BINANCE_API_SECRET trong Render Environment.'; return; }
+      if (!this.options.key || !this.options.secret) {
+        this.status = 'NEED_KEYS';
+        this.reason = this.cfg.localPc ? 'Mở lại file Chay-bot để nhập API Key và Secret.' : 'Nhập BINANCE_API_KEY và BINANCE_API_SECRET trong Render Environment.';
+        return;
+      }
       await this.sync();
       if (this.options.enabled) await this.reconcile();
-      if (!this.options.enabled) { this.status = 'DISABLED'; this.reason = 'Đã kết nối tài khoản. Chế độ chỉ đọc; đặt BINANCE_LIVE_ENABLED=true để cho phép giao dịch thật.'; return; }
+      if (!this.options.enabled) {
+        this.status = 'DISABLED';
+        this.reason = this.cfg.localPc
+          ? 'Đã kết nối tài khoản ở chế độ chỉ đọc. Mở lại bot và chọn 2 để cho phép giao dịch thật.'
+          : 'Đã kết nối tài khoản. Chế độ chỉ đọc; đặt BINANCE_LIVE_ENABLED=true để cho phép giao dịch thật.';
+        return;
+      }
       if (this.state.halt) { this.status = 'HALTED'; this.reason = this.state.halt; return; }
       if (this.stopped || this.state.paused) { this.status = 'PAUSED'; this.reason = 'Tạm dừng mở thêm. Vị thế và SL/TP hiện có vẫn được kiểm tra.'; return; }
       if (this.positions.length || this.orders.length || this.algos.length || this.state.entries.some(e => e.status !== 'CLOSED' && e.status !== 'REJECTED')) {

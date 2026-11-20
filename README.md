@@ -1,5 +1,14 @@
 # Confluence — tín hiệu crypto, mô phỏng và Binance Futures thật
 
+## Chạy Binance Futures trên máy tính
+
+1. Cài **Node.js 24 LTS** từ [trang tải Node.js](https://nodejs.org/en/download).
+2. Tải ZIP của nhánh `codex/binance-local-pc` trên GitHub và **giải nén toàn bộ** vào thư mục cá nhân. Trên Windows, mở **Chay-bot-Windows.cmd**. Trên macOS, mở **Chay-bot-macOS.command** bằng Terminal. Có thể chọn **Open** từ menu chuột phải nếu Finder hỏi xác nhận, hoặc chạy `sh Chay-bot-macOS.command` trong Terminal tại thư mục đã giải nén. Linux có thể chạy `npm run local`.
+3. Chương trình cài thư viện ở lần đầu và kiểm tra kết nối từ chính máy đang chạy. Nếu Binance trả giờ máy chủ, nhập **API Key**, **API Secret** Binance Futures và đặt mật khẩu dashboard ít nhất 8 ký tự. Ký tự nhập được ẩn. Nếu API giới hạn IP, khóa cần cho phép IP mạng hiện tại của bạn để đọc tài khoản.
+4. Đăng nhập [dashboard trên máy](http://127.0.0.1:8787) bằng tên `bot` và mật khẩu vừa đặt. Lần đầu chạy chỉ đọc để kiểm tra đúng số dư và vị thế. Muốn cho phép đặt lệnh thật, nhấn Ctrl+C, chạy lại file và chọn **2**. Bot bắt đầu ở trạng thái tắt mở lệnh, bật từ dashboard sau khi lưu cặp và TP/CL.
+
+Giữ cửa sổ Terminal mở để bot chạy. Khi máy ngủ, tắt hoặc mất mạng, bot ngừng theo dõi. Nếu trang chưa tự mở, nhập `http://127.0.0.1:8787` vào trình duyệt trên chính máy đó. Khóa API nằm trong `live-data/pc/settings.json`; giữ thư mục riêng tư. Thư mục `live-data/pc` còn lưu nhật ký lệnh và cấu hình của máy, tách khỏi Render. Chỉ chạy một tiến trình bot với cùng tài khoản Futures. Nếu Render từng đặt lệnh, đối chiếu vị thế và lệnh chờ trên Binance trước khi bật bản trên máy.
+
 ## Binance Futures tiền thật trên Render
 
 Chế độ mới `npm run trade:binance` dùng **API key và secret của tài khoản Binance Futures thật**, đọc tài khoản và có thể gửi lệnh thật khi bật cấu hình. Không phải Spot. Chiến lược RSI Hook / Pin-bar hiện tại **chưa được chứng minh có lãi**; các giới hạn tự chọn dưới đây là hạn mức vốn thận trọng, không phải tối ưu lợi nhuận.

@@ -143,7 +143,10 @@ export function renderLiveDesk(t, snapshot) {
   $('live-power-description').textContent = on ? (blocked ? 'Chờ Binance mở truy cập' : 'Chờ tín hiệu đủ điều kiện') : 'Không mở vị thế mới';
   $('live-power-icon').dataset.on = String(on);
   $('live-resume').hidden = on; $('live-pause').hidden = !on;
-  $('live-power-hint').textContent = t.halted ? 'Có lỗi cần kiểm tra trên Binance. Bật lại không xóa khóa HALTED.' : !t.enabled ? 'Đặt BINANCE_LIVE_ENABLED=true trong Render để cấp quyền cho nút Bật. Cấu hình TP/CL vẫn lưu được ngay.' : 'Tắt chỉ dừng mở thêm. Lệnh đã gửi có thể hoàn tất; vị thế đang mở vẫn giữ SL/TP trên sàn.';
+  const activationHint = snapshot.localPc
+    ? 'Mở lại bot và chọn 2 để cấp quyền cho nút Bật giao dịch. Bạn vẫn có thể lưu TP/CL.'
+    : 'Đặt BINANCE_LIVE_ENABLED=true trong Render để cấp quyền cho nút Bật. Cấu hình TP/CL vẫn lưu được ngay.';
+  $('live-power-hint').textContent = t.halted ? 'Có lỗi cần kiểm tra trên Binance. Bật lại không xóa khóa HALTED.' : !t.enabled ? activationHint : 'Tắt chỉ dừng mở thêm. Lệnh đã gửi có thể hoàn tất; vị thế đang mở vẫn giữ SL/TP trên sàn.';
   const card = $('live-connection-card');
   card.dataset.state = blocked ? 'blocked' : snapshot.status.phase === 'STREAMING' ? 'online' : 'waiting';
   const code = snapshot.status.httpStatus || health?.httpStatus;
@@ -161,7 +164,9 @@ export function renderLiveDesk(t, snapshot) {
   const check = $('live-check-connection');
   check.hidden = !recoveryRequired;
   check.disabled = waiting || checking || snapshot.status.checkingConnection || t.enabled;
-  if (recoveryRequired && t.enabled && !checking) $('live-check-result').textContent = 'Đặt BINANCE_LIVE_ENABLED=false trên Render để kiểm tra ở chế độ chỉ đọc.';
+  if (recoveryRequired && t.enabled && !checking) $('live-check-result').textContent = snapshot.localPc
+    ? 'Mở lại bot và chọn 1 (Chỉ đọc) để kiểm tra kết nối.'
+    : 'Đặt BINANCE_LIVE_ENABLED=false trên Render để kiểm tra ở chế độ chỉ đọc.';
   $('trading-title').textContent = 'Trạm giao dịch · Tiền thật';
   $('trading-status').textContent = t.halted ? 'Cần kiểm tra' : blocked ? 'Binance đang giới hạn' : t.paused ? 'Đã tắt mở lệnh' : !t.enabled ? 'Chế độ chỉ đọc' : t.status === 'READY' ? 'Sẵn sàng · chờ tín hiệu' : t.status === 'POSITION_OPEN' ? 'Đang theo dõi vị thế' : 'Chưa sẵn sàng';
   if (t.paused && !t.halted) $('trading-reason').textContent = 'Đã tắt mở vị thế mới. Cấu hình vẫn lưu được; vị thế hiện có tiếp tục được đối chiếu khi API truy cập được.';
