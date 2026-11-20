@@ -85,6 +85,8 @@
 .desk-connection[data-state=online]{border-color:#305047;background:#12231f}
 .desk-connection[data-state=online] strong{color:#83d8b7}
 #live-retry-countdown{display:block;font-size:10px;line-height:1.6;color:#d2ad7c;margin-top:8px}
+#live-check-connection{margin-top:10px;min-height:36px}
+#live-check-connection[hidden]{display:none}
 .desk-saved{display:flex;flex-direction:column;gap:5px;border-top:1px solid #253543;margin-top:20px;padding-top:17px}
 .desk-saved small{font-size:8px;color:#7d94a8;letter-spacing:1.2px}
 .desk-saved strong{font-size:14px;font-weight:600;color:#dce9f3}
